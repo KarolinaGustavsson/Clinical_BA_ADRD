@@ -1,0 +1,271 @@
+---
+title: "Table1"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-04-07
+---
+Before starting load CoxPH
+
+# 1.0 Preparation
+
+## 1.1 Load libraries
+```{r}
+options(repos = "http://nexus.ki.se/repository/cran.r-project.org")
+.libPaths("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/shun_trial/lib")
+
+library(haven)
+library(broom)
+library(dplyr)
+library(flexsurv)
+library(ggplot2)
+library(htmlTable)
+library(survival)
+library(survey)
+library(tidyr)
+library(rmarkdown)
+library(table1)
+```
+
+## 1.2 Add mortality status at end of follow up
+```{r}
+to1po2$Mortality <- ifelse(to1po2$status == 1, "Dead", "Alive")
+label(to1po2$Mortality) <- "Mortality at follow up"
+
+```
+
+## 1.3 Add follow up time
+```{r}
+to1po2$FollowUpTime <- to1po2$AgeAtLastDate - to1po2$AgeAtFirstDate
+label(to1po2$FollowUpTime) <- "Follow up time"
+```
+
+## 1.4 Recode sex
+```{r}
+# Create Sex column based on gender
+to1po2$Sex <- ifelse(to1po2$gender == "1", "Men", 
+                     ifelse(to1po2$gender == "2", "Women", NA))
+```
+
+## 1.5 Add missing to income quartiles
+```{r}
+# Define levels explicitly with "Missing" last
+to1po2$Income_quartile <- factor(
+  ifelse(is.na(to1po2$income_bins), "Missing", paste0("Q", to1po2$income_bins)),
+  levels = c("Q1", "Q2", "Q3", "Q4", "Missing")
+)
+
+label(to1po2$Income_quartile) <- "Income quartiles"
+```
+
+## 1.6 Redcode education levels for more clarity
+```{r} 
+to1po2$Education_level <- ifelse(to1po2$NewUtbNiva %in% c(1, 2), "1 Basic",
+                           ifelse(to1po2$NewUtbNiva %in% c(3, 4), "2. Secondary",
+                           ifelse(to1po2$NewUtbNiva %in% c(5, 6, 7), "3. Post-secondary",
+                           ifelse(is.na(to1po2$NewUtbNiva), "4. Unknown", "Other"))))
+
+label(to1po2$Education_level) <- "Education level"
+```
+
+## 1.7 Recode fasting status
+```{r}
+to1po2$fasting_status <- ifelse(to1po2$fastestatus == "F", "Fasting overnight",
+                          ifelse(to1po2$fastestatus == "N4", "Fasting 4h",
+                          ifelse(to1po2$fastestatus %in% c("N", "S"), "Non-fasting",
+                          "Unknown")))
+
+label(to1po2$fasting_status) <- "Fasting status"
+```
+
+## 1.8 Adjust labels
+```{r}
+labels <- list(
+  label(to1po2$AgeAtFirstDate) <- "Age at baseline (years, SD)",
+  label(to1po2$AgeAtLastDate) <- "Age at follow up (years, SD)",
+  label(to1po2$FollowUpTime) <- "Follow up time (years, SD)",
+  label(to1po2$Mortality) <- "Mortality at follow up (N, %)",
+  label(to1po2$Education_level) <- "Education level (N, %)",
+  label(to1po2$Income_quartile) <- "Income quartiles (N, %)",
+  label(to1po2$kdm) <- "KDMAge (years, SD)",
+  label(to1po2$phenoage) <- "PhenoAge (years, SD)",
+  label(to1po2$kdm_advance) <- "KDM Agegap (years, SD)",
+  label(to1po2$phenoage_advance) <- "PhenoAge Agegap (years, SD)",
+  label(to1po2$birthcohort) <- "Birth Cohort (N, %)",
+  
+  label(to1po2$S_Alb) <- "S-Albumin (g/L, SD)",
+  label(to1po2$S_Krea) <- "S-Creatinine (umol/L, SD)",
+  label(to1po2$TC) <- "S-Cholesterol (mmol/L, SD)",
+  label(to1po2$TG) <- "S-Triglycerides (mmol/L, SD)",
+  label(to1po2$S_K) <- "S-Potassium (mmol/L, SD)",
+  label(to1po2$S_Urea) <- "S-Blood urea nitrogen (mmol/L, SD)",
+  label(to1po2$S_LD) <- "S-Lactate dehydrogenase (ukat/L, SD)",
+  label(to1po2$S_Ca) <- "S-Calcium (mmol/L, SD)",
+  label(to1po2$S_Urat) <- "S-Uric acid (umol/L, SD)",
+  label(to1po2$S_FAMN) <- "S-Fructosamine (mmol/L, SD)",
+  label(to1po2$S_Hapt) <- "S-Haptoglobin (g/L, SD)",
+  label(to1po2$fS_Gluk) <- "S-Glucose (mmol/L, SD)",
+  
+  label(to1po2$ADRD) <- "ADRD (N, %)",
+  label(to1po2$Alzheimers) <- "Alzheimer's (N, %)",
+  label(to1po2$Vascular) <- "Vascular (N, %)",
+  label(to1po2$Other) <- "Other (N, %)",
+  
+  label(to1po2$S_ADRD) <- "SveDem ADRD (N, %)",
+  label(to1po2$S_e_alz) <- "SveDem Early Alzheimer's (N, %)",
+  label(to1po2$S_l_alz) <- "SveDem Late Alzheimer's (N, %)",
+  label(to1po2$S_alz_vas) <- "SveDem Mixed (N, %)",
+  label(to1po2$S_vas) <- "SveDem Vascular (N, %)",
+  label(to1po2$S_fro) <- "SveDem Frontotemporal (N, %)",
+  label(to1po2$S_lew) <- "SveDem Lewy Body (N, %)",
+  label(to1po2$S_par) <- "SveDem Parkinson's (N, %)",
+  label(to1po2$S_uns) <- "SveDem Unspecified (N, %)",
+  label(to1po2$S_oth) <- "SveDem Other (N, %)")
+```
+
+## 1.9 Create two groups based on biological age (KDM)
+```{r}
+# Biologically younger and older
+to1po2$kdm_a_group <- cut(
+  to1po2$kdm_advance,
+  breaks = quantile(to1po2$kdm_advance, probs = seq(0, 1, 0.5), na.rm = TRUE),
+  include.lowest = TRUE,
+  labels = c("Low Age Gap", "High Age Gap")
+)
+
+# Check result
+table(to1po2$kdm_a_group)
+```
+
+## 1.10 Saving these groups for making the longitudinal table
+```{r}
+# Create dataframe with sampleID and KDM group
+kdm_groups <- data.frame(
+  sampleID = to1po2$sampleID,
+  KDM_group = to1po2$kdm_a_group
+)
+
+# Save as CSV
+write.table(
+  kdm_groups,
+  "table1_kdmgroups_baseline.csv",
+  sep = ";",
+  dec = ",",
+  row.names = FALSE,
+  quote = FALSE,
+  fileEncoding = "Latin1"
+)
+```
+
+## 1.11 Custom rendering function for table1
+```{r}
+render.custom <- function(x, ...) {
+  if (is.numeric(x) && length(unique(na.omit(x))) == 2 && all(unique(na.omit(x)) %in% c(0, 1))) {
+    # Binary variable: Render counts and percentages
+    count <- sum(x, na.rm = TRUE)
+    if (count == 0) {
+      "-" # Display "-" if N is 0
+    } else {
+      sprintf("%d (%.2f%%)", count, 100 * mean(x, na.rm = TRUE)) # Show percent with two decimals
+    }
+  } else if (is.numeric(x)) {
+    # Numeric variable: Render mean ± SD
+    sprintf("%.2f ± %.2f", mean(x, na.rm = TRUE), sd(x, na.rm = TRUE))
+  } else {
+    # Fallback for other types
+    table1::render.default(x, ...)
+  }
+}
+```
+
+## 1.12 Adding p-values
+```{r}
+pvalue <- function(x, ...) {
+  ## Keep only the two comparison groups, exclude "Total"
+  x <- x[1:2]
+  
+  y <- unlist(x)
+  g <- factor(rep(seq_along(x), times = sapply(x, length)))
+  
+  keep <- !is.na(y) & !is.na(g)
+  y <- y[keep]
+  g <- g[keep]
+  
+  if (length(unique(g)) < 2) return("")
+  
+  ## Treat binary 0/1 as categorical
+  is_binary <- is.numeric(y) && all(unique(y) %in% c(0, 1))
+  
+  if (is.numeric(y) && !is_binary) {
+    p <- tryCatch(t.test(y ~ g)$p.value, error = function(e) NA)
+  } else {
+    tab <- table(y, g)
+    p <- tryCatch({
+      if (any(tab < 5)) {
+        fisher.test(tab)$p.value
+      } else {
+        chisq.test(tab, correct = FALSE)$p.value
+      }
+    }, error = function(e) NA)
+  }
+  
+  if (is.na(p)) {
+    ""
+  } else if (p < 0.001) {
+    "<0.001"
+  } else {
+    sprintf("%.3f", p)
+  }
+}
+```
+
+## 2.0 Making tables
+
+## 2.1 Making baseline characteristics table
+```{r}
+table_kdm_agegap_stratified_two <- table1(
+  ~ Sex + AgeAtFirstDate + AgeAtLastDate + FollowUpTime +
+    kdm + phenoage + kdm_advance + phenoage_advance + Mortality +
+    Education_level + Income_quartile + birthcohort + fasting_status +
+    S_Alb + S_Krea + TC + TG + S_K + S_Urea +
+    S_LD + S_Ca + S_Urat + S_FAMN +
+    S_Hapt + fS_Gluk + ADRD + Alzheimers + Vascular + Other + 
+    S_ADRD + S_e_alz + S_l_alz + S_alz_vas +S_vas + S_fro + S_par + S_lew + S_oth + S_uns | kdm_a_group,
+  data = to1po2,
+  overall = "Total",
+  render = render.custom,
+  label = labels,
+  extra.col = list(`P-value` = pvalue) #optional
+  )
+
+print(table_kdm_agegap_stratified_two)
+```
+
+```{r}
+write.table(as.data.frame(table_kdm_agegap_stratified_two), "table_kdm_agegap_stratified_two_p.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+## 2.2 Making table with follow up data
+```{r}
+followuptime_ADRD_b <- table1(
+  ~ AgeAtFirstDate + AgeAtLastDate + FollowUpTime | ADRD,
+  data = to1po2,
+  overall = "Total",
+  render = render.custom,
+  label = labels,
+  extra.col = list(`P-value` = pvalue) #optional
+  )
+
+print(followuptime_ADRD_b)
+```
+
+```{r}
+write.table(as.data.frame(followuptime_ADRD_b), "followuptime_ADRD_b_p.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```

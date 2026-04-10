@@ -1,0 +1,274 @@
+---
+title: "Selecting_biomarkers"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-04-10
+---
+
+Input data: AMORIS, load it in step 1.2 in Calculating_BA.rmd. Then further down AMORIS after removing outliers in step 1.7 in Calculating_BA.rmd.
+
+# 1.0 Preparation
+
+## 1.1 Loading libraries
+```{r}
+library(gridExtra)
+library(ggplot2)
+```
+
+## 1.2 Biomarker density plots (adjust = 3)
+```{r}
+# Biomarker variable names (as in your data)
+biomarkers <- c("fS_Gluk", "TG", "S_Alb", "S_Ca",
+                "S_FAMN", "S_Hapt", "S_K", "TC",
+                "S_Krea", "S_LD", "S_Urat", "S_Urea")
+
+# Corresponding pretty labels with units (in same order)
+biomarker_labels <- c("S-Glucose (mmol/L)", "S-Triglycerides (mmol/L)", "S-Albumin (g/L)", "S-Calcium (mmol/L)",
+                      "S-Fructosamine (mmol/L)", "S-Haptoglobin (g/L)", "S-Potassium (mmol/L)", "S-Cholesterol (mmol/L)",
+                      "S-Creatinine (µmol/L)", "S-Lactate dehydrogenase (µkat/L)", "S-Uric acid (µmol/L)", "S-Blood urea nitrogen (mmol/L)")
+
+# Create the plots
+biomarker_plots <- lapply(seq_along(biomarkers), function(i) {
+  ggplot(to1po2, aes_string(x = biomarkers[i])) +
+    geom_density(fill = "grey80", color = "black", adjust = 3 , alpha = 0.8 ) +
+    labs(x = biomarker_labels[i], y = "Density") +
+    theme_bw() +
+    theme(
+      panel.grid.major = element_blank(),  # Remove major gridlines
+      panel.grid.minor = element_blank(),  # Remove minor gridlines
+      plot.title = element_blank(),
+      axis.title.x = element_text(size = 9),
+      axis.title.y = element_text(size = 9),
+      strip.text = element_blank()
+    )
+})
+
+# Combine into one figure
+combined_plot <- do.call(grid.arrange, c(biomarker_plots, ncol = 4))
+```
+
+```{r}
+# Open device BEFORE running grid.arrange
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/2025-06-06/Density_adjust3.png",
+    width = 10, height = 8, units = "in", res = 600)
+
+gridExtra::grid.arrange(grobs = biomarker_plots, ncol = 4)
+
+dev.off()
+```
+
+# 2.0 Correlation between chronological age and biomarkers
+
+## 2.1 Correlation before removing outliers
+```{r}
+biomarkers <- c("S_Alb", "S_Krea", "TC", "TG", "S_K", "S_P", "Fe_maet", "S_Urea", "S_LD", "S_Ca", "fS_TIBC", "fS_Jaern", "S_Alp", "S_Urat", "S_FAMN", "S_Hapt", "fS_Gluk")
+
+colnames(amoris)[colnames(amoris) == "Alder"] <- "age"
+```
+
+```{r}
+correlations_spearman <- cor(amoris$age, amoris[, biomarkers], method = "spearman", use = "complete.obs")
+correlations_pearson <- cor(amoris$age, amoris[, biomarkers], method = "pearson", use = "complete.obs")
+
+#print(correlations_spearman)
+#print(correlations_pearson)
+```
+
+```{r}
+# Convert to data frame for easier sorting and display
+correlation_df <- data.frame(
+  Biomarker = colnames(amoris[, biomarkers]),
+  Spearman = as.vector(correlations_spearman),
+  Pearson = as.vector(correlations_pearson)
+)
+
+# Sort by the absolute value of Spearman correlations (descending order)
+correlation_df_sorted <- correlation_df[order(abs(correlation_df$Spearman), decreasing = TRUE), ]
+
+# Print the sorted correlations
+print(correlation_df_sorted)
+
+#B_EPK_R, S_CRP, B_LPK_V, S_Ca, Fe_maet, fS_Jaern <0.1 for both pearson and spearman
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_sorted), "raw_ADRDamoris_all_bm.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+```{r}
+# Filter data based on the 'Kon' column
+c_amoris_men <- amoris[amoris$Kon == 1, ]
+c_amoris_women <- amoris[amoris$Kon == 2, ]
+
+
+## check pearson correlation
+# Calculate Pearson correlations between Age and biomarkers
+correlations_pearson_m <- cor(c_amoris_men$age, c_amoris_men[, biomarkers], method = "pearson", use = "complete.obs")
+correlations_spearman_m <- cor(c_amoris_men$age, c_amoris_men[, biomarkers], method = "spearman", use = "complete.obs")
+correlations_pearson_f <- cor(c_amoris_women$age, c_amoris_women[, biomarkers], method = "pearson", use = "complete.obs")
+correlations_spearman_f <- cor(c_amoris_women$age, c_amoris_women[, biomarkers], method = "spearman", use = "complete.obs")
+#print("correlations_pearson_m:")
+#print(correlations_pearson_m)#
+#print("correlations_spearman_m:")
+#print(correlations_spearman_m)#
+#print("correlations_pearson_f:")
+#print(correlations_pearson_f)#
+#print("correlations_spearman_f:")
+#print(correlations_spearman_f)#
+```
+
+```{r}
+# For men: create a data frame for both Pearson and Spearman correlations
+correlation_df_men <- data.frame(
+  Biomarker = colnames(c_amoris_men[, biomarkers]),
+  Pearson = as.vector(correlations_pearson_m),
+  Spearman = as.vector(correlations_spearman_m)
+)
+
+# Sort by absolute Spearman correlation values for men
+correlation_df_men_sorted <- correlation_df_men[order(abs(correlation_df_men$Spearman), decreasing = TRUE), ]
+
+# For women: create a data frame for both Pearson and Spearman correlations
+correlation_df_women <- data.frame(
+  Biomarker = colnames(c_amoris_women[, biomarkers]),
+  Pearson = as.vector(correlations_pearson_f),
+  Spearman = as.vector(correlations_spearman_f)
+)
+
+# Sort by absolute Spearman correlation values for women
+correlation_df_women_sorted <- correlation_df_women[order(abs(correlation_df_women$Spearman), decreasing = TRUE), ]
+
+# Print the sorted correlations for men and women
+print("Sorted Correlations for Men:")
+print(correlation_df_men_sorted) #S_CRP, fS_TIBC, fS_Jaern, Fe_maet, S_Alp <0.1 S
+
+print("Sorted Correlations for Women:") #S_Ca, Lymfocy, S_P, Fe_maet, S_CRP, B_EPK_R, B_LPK_V, fS_Jaern <0.1 s
+print(correlation_df_women_sorted)
+
+#compared with all: B_EPK_R, S_CRP, B_LPK_V, S_Ca, Fe_maet, fS_Jaern 
+#in all, men and women: S_CRP, fS_Jaern, Fe_maet are all bad biomarkers for BA
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_men_sorted), "raw_ADRDamoris_all_bm_men.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_women_sorted), "raw_ADRDamoris_all_bm_wom.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+## 2.2 Correlation after removing outliers (step 1.7 in Calculating_BA.rmd)
+```{r}
+correlations_spearman <- cor(AMORIS$age, AMORIS[, biomarkers], method = "spearman", use = "complete.obs")
+correlations_pearson <- cor(AMORIS$age, AMORIS[, biomarkers], method = "pearson", use = "complete.obs")
+
+#print(correlations_spearman)
+#print(correlations_pearson)
+```
+
+```{r}
+# Convert to data frame for easier sorting and display
+correlation_df <- data.frame(
+  Biomarker = colnames(AMORIS[, biomarkers]),
+  Spearman = as.vector(correlations_spearman),
+  Pearson = as.vector(correlations_pearson)
+)
+
+# Sort by the absolute value of Spearman correlations (descending order)
+correlation_df_sorted <- correlation_df[order(abs(correlation_df$Spearman), decreasing = TRUE), ]
+
+# Print the sorted correlations
+print(correlation_df_sorted)
+
+#B_EPK_R, S_CRP, B_LPK_V, S_Ca, Fe_maet, fS_Jaern <0.1 for both pearson and spearman
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_sorted), "ADRDamoris_all_bm.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+```{r}
+# Filter data based on the 'Kon' column
+c_AMORIS_men <- AMORIS[AMORIS$gender == 1, ]
+c_AMORIS_women <- AMORIS[AMORIS$gender == 2, ]
+
+
+## check pearson correlation
+# Calculate Pearson correlations between Age and biomarkers
+correlations_pearson_m <- cor(c_AMORIS_men$age, c_AMORIS_men[, biomarkers], method = "pearson", use = "complete.obs")
+correlations_spearman_m <- cor(c_AMORIS_men$age, c_AMORIS_men[, biomarkers], method = "spearman", use = "complete.obs")
+correlations_pearson_f <- cor(c_AMORIS_women$age, c_AMORIS_women[, biomarkers], method = "pearson", use = "complete.obs")
+correlations_spearman_f <- cor(c_AMORIS_women$age, c_AMORIS_women[, biomarkers], method = "spearman", use = "complete.obs")
+#print("correlations_pearson_m:")
+#print(correlations_pearson_m)#
+#print("correlations_spearman_m:")
+#print(correlations_spearman_m)#
+#print("correlations_pearson_f:")
+#print(correlations_pearson_f)#
+#print("correlations_spearman_f:")
+#print(correlations_spearman_f)#
+```
+
+```{r}
+# For men: create a data frame for both Pearson and Spearman correlations
+correlation_df_men <- data.frame(
+  Biomarker = colnames(c_AMORIS_men[, biomarkers]),
+  Pearson = as.vector(correlations_pearson_m),
+  Spearman = as.vector(correlations_spearman_m)
+)
+
+# Sort by absolute Spearman correlation values for men
+correlation_df_men_sorted <- correlation_df_men[order(abs(correlation_df_men$Spearman), decreasing = TRUE), ]
+
+# For women: create a data frame for both Pearson and Spearman correlations
+correlation_df_women <- data.frame(
+  Biomarker = colnames(c_AMORIS_women[, biomarkers]),
+  Pearson = as.vector(correlations_pearson_f),
+  Spearman = as.vector(correlations_spearman_f)
+)
+
+# Sort by absolute Spearman correlation values for women
+correlation_df_women_sorted <- correlation_df_women[order(abs(correlation_df_women$Spearman), decreasing = TRUE), ]
+
+# Print the sorted correlations for men and women
+print("Sorted Correlations for Men:")
+print(correlation_df_men_sorted) #S_CRP, fS_TIBC, fS_Jaern, Fe_maet, S_Alp <0.1 S
+
+print("Sorted Correlations for Women:") #S_Ca, Lymfocy, S_P, Fe_maet, S_CRP, B_EPK_R, B_LPK_V, fS_Jaern <0.1 s
+print(correlation_df_women_sorted)
+
+#compared with all: B_EPK_R, S_CRP, B_LPK_V, S_Ca, Fe_maet, fS_Jaern 
+#in all, men and women: S_CRP, fS_Jaern, Fe_maet are all bad biomarkers for BA
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_men_sorted), "ADRDamoris_all_bm_men.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_women_sorted), "ADRDamoris_all_bm_wom.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```

@@ -1,0 +1,541 @@
+---
+title: "CoxPH_subgroups"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-04-10
+---
+
+Input data: to1po2 from CoxPH.rmd
+Covariates: sex, education level, income quartiles
+
+# 1.0 Time to evenet analysis: age group
+
+## 1.1 P-value function
+```{r}
+# Subgroup analysis (age cutoff 65)
+p_value_results <- data.frame(
+  Variable = character(),
+  AgeGroup1 = character(),
+  AgeGroup2 = character(),
+  P_Value = numeric(),
+  stringsAsFactors = FALSE
+)
+```
+
+## 1.2 Median age = cut off 
+```{r}
+median(to1po2$age, na.rm = TRUE)
+```
+
+## 1.3 All (agegroup 45)
+```{r}
+BA_measures <- c("phenoage_advance_sd", "kdm_advance_sd") #"hd_log_res_sd"
+
+# Initialize HR_BA_adrd data frame
+HR_BA <- data.frame(
+  BA = rep(BA_measures, each = 2),
+  AgeGroup = rep(c("Under 45", "45 and over"), times = length(BA_measures)),
+  model = rep("ADRD_agegroup_45", times = 2 * length(BA_measures)),
+  beta = NA, se = NA, HR = NA,
+  CI_lower = NA, CI_upper = NA, p = NA, P_PH_BA = NA, global_p_PH_BA = NA, concordance = NA, N = NA, events = NA, std_beta = NA) 
+
+for (j in 1:length(BA_measures)) {
+  # Loop over each BA measure
+  for (age_group in c("Under 45", "45 and over")) {
+    # Subset data based on age group
+    if (age_group == "Under 45") {
+      data_subset <- to1po2[to1po2$AgeAtFirstDate < 45, ]
+    } else {
+      data_subset <- to1po2[to1po2$AgeAtFirstDate >= 45, ]
+    }
+
+    # Fit Sex-adjusted model
+    fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva  ")), data = data_subset)
+    coef_multivariable <- summary(fit_multivariable)
+    std_beta <- calc_standardized_beta(fit_multivariable, data_subset, BA_measures[j])
+
+    # Determine row index for updating HR_BA
+    if (age_group == "Under 45") {
+      row_index <- (j - 1) * 2 + 1
+    } else {
+      row_index <- j * 2
+    }
+    
+    # Update HR_BA with model results
+    HR_BA[row_index, c("beta", "se", "HR")] <- coef_multivariable$coefficients[1, c(1, 3, 2)]
+    HR_BA[row_index, "p"] <- coef_multivariable$coefficients[1, 5]
+    HR_BA[row_index, c("CI_lower", "CI_upper")] <- coef_multivariable$conf.int[1, c(3, 4)]
+    HR_BA[row_index, "P_PH_BA"] <- cox.zph(fit_multivariable)$table[1, 3]
+    HR_BA[row_index, "global_p_PH_BA"] <- cox.zph(fit_multivariable)$table["GLOBAL", "p"]
+    HR_BA[row_index, "concordance"] <- coef_multivariable$concordance[1]
+    HR_BA[row_index, "N"] <- coef_multivariable$n
+    HR_BA[row_index, "std_beta"] <- std_beta
+    HR_BA[row_index, "events"] <- fit_multivariable$nevent
+    #HR_BA[row_index_gender, "events"] <- coef_gender$nevent blir bara i en av dem
+  }
+}
+ADRD_agegroup_45 <- HR_BA
+# Print the updated HR_BA data frame
+print(HR_BA)
+```
+
+## 1.4 Alzheimers (agegroup 45)
+```{r}
+BA_measures <- c("phenoage_advance_sd", "kdm_advance_sd") #"hd_log_res_sd"
+
+# Initialize HR_BA_adrd data frame
+HR_BA <- data.frame(
+  BA = rep(BA_measures, each = 2),
+  AgeGroup = rep(c("Under 45", "45 and over"), times = length(BA_measures)),
+  model = rep("Alzheimers_agegroup_45", times = 2 * length(BA_measures)),
+  beta = NA, se = NA, HR = NA,
+  CI_lower = NA, CI_upper = NA, p = NA, P_PH_BA = NA, global_p_PH_BA = NA, concordance = NA, N = NA, events = NA, std_beta = NA ) #events =NA
+
+for (j in 1:length(BA_measures)) {
+  # Loop over each BA measure
+  for (age_group in c("Under 45", "45 and over")) {
+    # Subset data based on age group
+    if (age_group == "Under 45") {
+      data_subset <- to1po2[to1po2$AgeAtFirstDate < 45, ]
+    } else {
+      data_subset <- to1po2[to1po2$AgeAtFirstDate >= 45, ]
+    }
+
+    # Fit Sex-adjusted model
+    fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva  ")), data = data_subset)
+    coef_multivariable <- summary(fit_multivariable)
+    std_beta <- calc_standardized_beta(fit_multivariable, data_subset, BA_measures[j])
+
+    # Determine row index for updating HR_BA
+    if (age_group == "Under 45") {
+      row_index <- (j - 1) * 2 + 1
+    } else {
+      row_index <- j * 2
+    }
+    
+    # Update HR_BA with model results
+    HR_BA[row_index, c("beta", "se", "HR")] <- coef_multivariable$coefficients[1, c(1, 3, 2)]
+    HR_BA[row_index, "p"] <- coef_multivariable$coefficients[1, 5]
+    HR_BA[row_index, c("CI_lower", "CI_upper")] <- coef_multivariable$conf.int[1, c(3, 4)]
+    HR_BA[row_index, "P_PH_BA"] <- cox.zph(fit_multivariable)$table[1, 3]
+    HR_BA[row_index, "global_p_PH_BA"] <- cox.zph(fit_multivariable)$table["GLOBAL", "p"]
+    HR_BA[row_index, "concordance"] <- coef_multivariable$concordance[1]
+    HR_BA[row_index, "N"] <- coef_multivariable$n
+    HR_BA[row_index, "std_beta"] <- std_beta
+    HR_BA[row_index, "events"] <- fit_multivariable$nevent
+    #HR_BA[row_index_gender, "events"] <- coef_gender$nevent blir bara i en av dem
+  }
+}
+Alzh_agegroup_45 <- HR_BA
+# Print the updated HR_BA data frame
+print(HR_BA)
+```
+
+## 1.5 Vascular (agegroup 45)
+```{r}
+BA_measures <- c("phenoage_advance_sd", "kdm_advance_sd") #"hd_log_res_sd"
+
+# Initialize HR_BA_adrd data frame
+HR_BA <- data.frame(
+  BA = rep(BA_measures, each = 2),
+  AgeGroup = rep(c("Under 45", "45 and over"), times = length(BA_measures)),
+  model = rep("Vascular_agegroup_45", times = 2 * length(BA_measures)),
+  beta = NA, se = NA, HR = NA,
+  CI_lower = NA, CI_upper = NA, p = NA, P_PH_BA = NA, global_p_PH_BA = NA, concordance = NA, N = NA, events = NA, std_beta = NA ) #events =NA
+
+for (j in 1:length(BA_measures)) {
+  # Loop over each BA measure
+  for (age_group in c("Under 45", "45 and over")) {
+    # Subset data based on age group
+    if (age_group == "Under 45") {
+      data_subset <- to1po2[to1po2$AgeAtFirstDate < 45, ]
+    } else {
+      data_subset <- to1po2[to1po2$AgeAtFirstDate >= 45, ]
+    }
+
+    # Fit Sex-adjusted model
+    fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva  ")), data = data_subset)
+    coef_multivariable <- summary(fit_multivariable)
+    std_beta <- calc_standardized_beta(fit_multivariable, data_subset, BA_measures[j])
+
+    # Determine row index for updating HR_BA
+    if (age_group == "Under 45") {
+      row_index <- (j - 1) * 2 + 1
+    } else {
+      row_index <- j * 2
+    }
+    
+    # Update HR_BA with model results
+    HR_BA[row_index, c("beta", "se", "HR")] <- coef_multivariable$coefficients[1, c(1, 3, 2)]
+    HR_BA[row_index, "p"] <- coef_multivariable$coefficients[1, 5]
+    HR_BA[row_index, c("CI_lower", "CI_upper")] <- coef_multivariable$conf.int[1, c(3, 4)]
+    HR_BA[row_index, "P_PH_BA"] <- cox.zph(fit_multivariable)$table[1, 3]
+    HR_BA[row_index, "global_p_PH_BA"] <- cox.zph(fit_multivariable)$table["GLOBAL", "p"]
+    HR_BA[row_index, "concordance"] <- coef_multivariable$concordance[1]
+    HR_BA[row_index, "N"] <- coef_multivariable$n
+    HR_BA[row_index, "std_beta"] <- std_beta
+    HR_BA[row_index, "events"] <- fit_multivariable$nevent
+    #HR_BA[row_index_gender, "events"] <- coef_gender$nevent blir bara i en av dem
+  }
+}
+Vasc_agegroup_45 <- HR_BA
+# Print the updated HR_BA data frame
+print(HR_BA)
+```
+
+## 1.6 Other (agegroup 45)
+```{r}
+BA_measures <- c("phenoage_advance_sd", "kdm_advance_sd") #"hd_log_res_sd"
+
+# Initialize HR_BA_adrd data frame
+HR_BA <- data.frame(
+  BA = rep(BA_measures, each = 2),
+  AgeGroup = rep(c("Under 45", "45 and over"), times = length(BA_measures)),
+  model = rep("Other_agegroup_45", times = 2 * length(BA_measures)),
+  beta = NA, se = NA, HR = NA,
+  CI_lower = NA, CI_upper = NA, p = NA, P_PH_BA = NA, global_p_PH_BA = NA, concordance = NA, N = NA, events = NA, std_beta = NA ) #events =NA
+
+for (j in 1:length(BA_measures)) {
+  # Loop over each BA measure
+  for (age_group in c("Under 45", "45 and over")) {
+    # Subset data based on age group
+    if (age_group == "Under 45") {
+      data_subset <- to1po2[to1po2$AgeAtFirstDate < 45, ]
+    } else {
+      data_subset <- to1po2[to1po2$AgeAtFirstDate >= 45, ]
+    }
+
+    # Fit Sex-adjusted model
+    fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva  ")), data = data_subset)
+    coef_multivariable <- summary(fit_multivariable)
+    std_beta <- calc_standardized_beta(fit_multivariable, data_subset, BA_measures[j])
+
+    # Determine row index for updating HR_BA
+    if (age_group == "Under 45") {
+      row_index <- (j - 1) * 2 + 1
+    } else {
+      row_index <- j * 2
+    }
+    
+    # Update HR_BA with model results
+    HR_BA[row_index, c("beta", "se", "HR")] <- coef_multivariable$coefficients[1, c(1, 3, 2)]
+    HR_BA[row_index, "p"] <- coef_multivariable$coefficients[1, 5]
+    HR_BA[row_index, c("CI_lower", "CI_upper")] <- coef_multivariable$conf.int[1, c(3, 4)]
+    HR_BA[row_index, "P_PH_BA"] <- cox.zph(fit_multivariable)$table[1, 3]
+    HR_BA[row_index, "global_p_PH_BA"] <- cox.zph(fit_multivariable)$table["GLOBAL", "p"]
+    HR_BA[row_index, "concordance"] <- coef_multivariable$concordance[1]
+    HR_BA[row_index, "N"] <- coef_multivariable$n
+    HR_BA[row_index, "std_beta"] <- std_beta
+    HR_BA[row_index, "events"] <- fit_multivariable$nevent
+    #HR_BA[row_index_gender, "events"] <- coef_gender$nevent blir bara i en av dem
+  }
+}
+Othe_agegroup_45 <- HR_BA
+# Print the updated HR_BA data frame
+print(HR_BA)
+```
+
+## 1.7 Binding
+```{r}
+combined_df_agegroup_45 <- rbind(
+  ADRD_agegroup_45,
+  Alzh_agegroup_45,
+  Vasc_agegroup_45,
+  Othe_agegroup_45
+)
+```
+
+## 1.8 P-values comparing the two age groups
+```{r}
+# Create an empty data frame to store results
+comparison_results <- data.frame()
+
+# Loop through each unique BA and model combination
+unique_combos <- unique(combined_df_agegroup_45[, c("BA", "model")])
+
+for (i in seq_len(nrow(unique_combos))) {
+  ba <- unique_combos$BA[i]
+  model <- unique_combos$model[i]
+
+  subset_rows <- combined_df_agegroup_45[combined_df_agegroup_45$BA == ba & 
+                                           combined_df_agegroup_45$model == model, ]
+
+  if (nrow(subset_rows) == 2 && all(c("Under 45", "45 and over") %in% subset_rows$AgeGroup)) {
+    # Extract beta and SE
+    beta_under45 <- subset_rows$beta[subset_rows$AgeGroup == "Under 45"]
+    se_under45 <- subset_rows$se[subset_rows$AgeGroup == "Under 45"]
+
+    beta_over45 <- subset_rows$beta[subset_rows$AgeGroup == "45 and over"]
+    se_over45 <- subset_rows$se[subset_rows$AgeGroup == "45 and over"]
+
+    # Z-test for difference in coefficients
+    z <- (beta_under45 - beta_over45) / sqrt(se_under45^2 + se_over45^2)
+    p_val <- 2 * (1 - pnorm(abs(z)))
+
+    # Append to results
+    comparison_results <- rbind(comparison_results, data.frame(
+      BA = ba,
+      model = model,
+      AgeGroup1 = "Under 45",
+      AgeGroup2 = "45 and over",
+      p_value_group = p_val
+    ))
+  }
+}
+
+# Join the results back to your combined_df_agegroup_45 if needed
+combined_with_p <- merge(combined_df_agegroup_45, comparison_results, by = c("BA", "model"), all.x = TRUE)
+
+# Done! You can now export combined_with_p
+```
+
+## 1.9 Saving
+```{r}
+write.table(as.data.frame(combined_with_p), "combined_df_agegroup_45_main.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+# 2.0 Time to evenet analysis: sex
+
+## 2.1 Making sex into a factor
+```{r}
+to1po2$new_gender <- to1po2$gender
+
+to1po2$new_gender <- factor(to1po2$new_gender, levels = c("1", "2"), labels = c("Men", "Women"))
+```
+
+## 2.2 ADRD (sex)
+```{r}
+BA_measures <- c("kdm_advance_sd", "phenoage_advance_sd")
+
+# Initialize HR_BA data frame
+HR_BA <- data.frame(
+  BA = rep(BA_measures, each = 2),
+  Gender = rep(c("Men", "Women"), times = length(BA_measures)),
+  model = rep("ADRD_sex", times = 2 * length(BA_measures)),
+  beta = NA, se = NA, HR = NA,
+  CI_lower = NA, CI_upper = NA, p = NA, P_PH_BA = NA, global_p_PH_BA = NA, concordance = NA, N = NA, events = NA, std_beta = NA
+)
+
+for (j in 1:length(BA_measures)) {
+  for (gender_group in c("Men", "Women")) {
+    # Subset data based on new_sex
+    data_subset <- to1po2[to1po2$new_gender == gender_group, ]
+
+    # Fit Cox model for the BA measure (without 'new_gender' as a covariate)
+    fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ income_bins + NewUtbNiva  ")), data = data_subset)
+    coef_multivariable <- summary(fit_multivariable)
+    std_beta <- calc_standardized_beta(fit_multivariable, data_subset, BA_measures[j])
+
+    # Determine row index for updating HR_BA
+    row_index <- if (gender_group == "Men") (j - 1) * 2 + 1 else j * 2
+
+    # Update HR_BA with model results
+    HR_BA[row_index, c("beta", "se", "HR")] <- coef_multivariable$coefficients[1, c(1, 3, 2)]
+    HR_BA[row_index, "p"] <- coef_multivariable$coefficients[1, 5]
+    HR_BA[row_index, c("CI_lower", "CI_upper")] <- coef_multivariable$conf.int[1, c(3, 4)]
+    HR_BA[row_index, "P_PH_BA"] <- cox.zph(fit_multivariable)$table[1, 3]
+    HR_BA[row_index, "global_p_PH_BA"] <- cox.zph(fit_multivariable)$table[2, 3]
+    HR_BA[row_index, "concordance"] <- coef_multivariable$concordance[1]
+    HR_BA[row_index, "N"] <- coef_multivariable$n
+    HR_BA[row_index, "std_beta"] <- std_beta
+    HR_BA[row_index, "events"] <- fit_multivariable$nevent
+  }
+}
+ADRD_sex <- HR_BA
+# Print the updated HR_BA data frame
+print(HR_BA)
+```
+
+## 2.3 Alzheimers (sex)
+```{r}
+BA_measures <- c("kdm_advance_sd", "phenoage_advance_sd")
+
+# Initialize HR_BA data frame
+HR_BA <- data.frame(
+  BA = rep(BA_measures, each = 2),
+  Gender = rep(c("Men", "Women"), times = length(BA_measures)),
+  model = rep("Alzheimers_sex", times = 2 * length(BA_measures)),
+  beta = NA, se = NA, HR = NA,
+  CI_lower = NA, CI_upper = NA, p = NA, P_PH_BA = NA, global_p_PH_BA = NA, concordance = NA, N = NA, events = NA, std_beta = NA
+)
+
+for (j in 1:length(BA_measures)) {
+  for (gender_group in c("Men", "Women")) {
+    # Subset data based on new_sex
+    data_subset <- to1po2[to1po2$new_gender == gender_group, ]
+
+    # Fit Cox model for the BA measure (without 'new_gender' as a covariate)
+    fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ income_bins + NewUtbNiva  ")), data = data_subset)
+    coef_multivariable <- summary(fit_multivariable)
+    std_beta <- calc_standardized_beta(fit_multivariable, data_subset, BA_measures[j])
+
+    # Determine row index for updating HR_BA
+    row_index <- if (gender_group == "Men") (j - 1) * 2 + 1 else j * 2
+
+    # Update HR_BA with model results
+    HR_BA[row_index, c("beta", "se", "HR")] <- coef_multivariable$coefficients[1, c(1, 3, 2)]
+    HR_BA[row_index, "p"] <- coef_multivariable$coefficients[1, 5]
+    HR_BA[row_index, c("CI_lower", "CI_upper")] <- coef_multivariable$conf.int[1, c(3, 4)]
+    HR_BA[row_index, "P_PH_BA"] <- cox.zph(fit_multivariable)$table[1, 3]
+    HR_BA[row_index, "global_p_PH_BA"] <- cox.zph(fit_multivariable)$table[2, 3]
+    HR_BA[row_index, "concordance"] <- coef_multivariable$concordance[1]
+    HR_BA[row_index, "N"] <- coef_multivariable$n
+    HR_BA[row_index, "std_beta"] <- std_beta
+    HR_BA[row_index, "events"] <- fit_multivariable$nevent
+  }
+}
+Alzh_sex <- HR_BA
+# Print the updated HR_BA data frame
+print(HR_BA)
+```
+
+## 2.4 Vascular (sex)
+```{r}
+BA_measures <- c("kdm_advance_sd", "phenoage_advance_sd")
+
+# Initialize HR_BA data frame
+HR_BA <- data.frame(
+  BA = rep(BA_measures, each = 2),
+  Gender = rep(c("Men", "Women"), times = length(BA_measures)),
+  model = rep("Vascular_sex", times = 2 * length(BA_measures)),
+  beta = NA, se = NA, HR = NA,
+  CI_lower = NA, CI_upper = NA, p = NA, P_PH_BA = NA, global_p_PH_BA = NA, concordance = NA, N = NA, events = NA, std_beta = NA
+)
+
+for (j in 1:length(BA_measures)) {
+  for (gender_group in c("Men", "Women")) {
+    # Subset data based on new_sex
+    data_subset <- to1po2[to1po2$new_gender == gender_group, ]
+
+    # Fit Cox model for the BA measure (without 'new_gender' as a covariate)
+    fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ income_bins + NewUtbNiva  ")), data = data_subset)
+    coef_multivariable <- summary(fit_multivariable)
+    std_beta <- calc_standardized_beta(fit_multivariable, data_subset, BA_measures[j])
+
+    # Determine row index for updating HR_BA
+    row_index <- if (gender_group == "Men") (j - 1) * 2 + 1 else j * 2
+
+    # Update HR_BA with model results
+    HR_BA[row_index, c("beta", "se", "HR")] <- coef_multivariable$coefficients[1, c(1, 3, 2)]
+    HR_BA[row_index, "p"] <- coef_multivariable$coefficients[1, 5]
+    HR_BA[row_index, c("CI_lower", "CI_upper")] <- coef_multivariable$conf.int[1, c(3, 4)]
+    HR_BA[row_index, "P_PH_BA"] <- cox.zph(fit_multivariable)$table[1, 3]
+    HR_BA[row_index, "global_p_PH_BA"] <- cox.zph(fit_multivariable)$table[2, 3]
+    HR_BA[row_index, "concordance"] <- coef_multivariable$concordance[1]
+    HR_BA[row_index, "N"] <- coef_multivariable$n
+    HR_BA[row_index, "std_beta"] <- std_beta
+    HR_BA[row_index, "events"] <- fit_multivariable$nevent
+  }
+}
+Vasc_sex <- HR_BA
+# Print the updated HR_BA data frame
+print(HR_BA)
+```
+
+## 2.5 Other (sex)
+```{r}
+BA_measures <- c("kdm_advance_sd", "phenoage_advance_sd")
+
+# Initialize HR_BA data frame
+HR_BA <- data.frame(
+  BA = rep(BA_measures, each = 2),
+  Gender = rep(c("Men", "Women"), times = length(BA_measures)),
+  model = rep("Other_sex", times = 2 * length(BA_measures)),
+  beta = NA, se = NA, HR = NA,
+  CI_lower = NA, CI_upper = NA, p = NA, P_PH_BA = NA, global_p_PH_BA = NA, concordance = NA, N = NA, events = NA, std_beta = NA
+)
+
+for (j in 1:length(BA_measures)) {
+  for (gender_group in c("Men", "Women")) {
+    # Subset data based on new_sex
+    data_subset <- to1po2[to1po2$new_gender == gender_group, ]
+
+    # Fit Cox model for the BA measure (without 'new_gender' as a covariate)
+    fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ income_bins + NewUtbNiva  ")), data = data_subset)
+    coef_multivariable <- summary(fit_multivariable)
+    std_beta <- calc_standardized_beta(fit_multivariable, data_subset, BA_measures[j])
+
+    # Determine row index for updating HR_BA
+    row_index <- if (gender_group == "Men") (j - 1) * 2 + 1 else j * 2
+
+    # Update HR_BA with model results
+    HR_BA[row_index, c("beta", "se", "HR")] <- coef_multivariable$coefficients[1, c(1, 3, 2)]
+    HR_BA[row_index, "p"] <- coef_multivariable$coefficients[1, 5]
+    HR_BA[row_index, c("CI_lower", "CI_upper")] <- coef_multivariable$conf.int[1, c(3, 4)]
+    HR_BA[row_index, "P_PH_BA"] <- cox.zph(fit_multivariable)$table[1, 3]
+    HR_BA[row_index, "global_p_PH_BA"] <- cox.zph(fit_multivariable)$table[2, 3]
+    HR_BA[row_index, "concordance"] <- coef_multivariable$concordance[1]
+    HR_BA[row_index, "N"] <- coef_multivariable$n
+    HR_BA[row_index, "std_beta"] <- std_beta
+    HR_BA[row_index, "events"] <- fit_multivariable$nevent
+  }
+}
+Othe_sex <- HR_BA
+# Print the updated HR_BA data frame
+print(HR_BA)
+```
+
+## 2.6 Binding
+```{r}
+combined_df_sex <- rbind(
+  ADRD_sex,
+  Alzh_sex,
+  Vasc_sex,
+  Othe_sex
+)
+```
+
+## 2.7 P-values comparing the sexes
+```{r}
+# Create an empty data frame to store results
+gender_comparison_results <- data.frame()
+
+# Loop through each unique BA and model combination
+unique_combos <- unique(combined_df_sex[, c("BA", "model")])
+
+for (i in seq_len(nrow(unique_combos))) {
+  ba <- unique_combos$BA[i]
+  model <- unique_combos$model[i]
+
+  subset_rows <- combined_df_sex[combined_df_sex$BA == ba & 
+                                  combined_df_sex$model == model, ]
+
+  if (nrow(subset_rows) == 2 && all(c("Men", "Women") %in% subset_rows$Gender)) {
+    # Extract beta and SE for each gender
+    beta_men <- subset_rows$beta[subset_rows$Gender == "Men"]
+    se_men <- subset_rows$se[subset_rows$Gender == "Men"]
+
+    beta_women <- subset_rows$beta[subset_rows$Gender == "Women"]
+    se_women <- subset_rows$se[subset_rows$Gender == "Women"]
+
+    # Z-test for difference in coefficients
+    z <- (beta_men - beta_women) / sqrt(se_men^2 + se_women^2)
+    p_val <- 2 * (1 - pnorm(abs(z)))
+
+    # Append result
+    gender_comparison_results <- rbind(gender_comparison_results, data.frame(
+      BA = ba,
+      model = model,
+      Gender1 = "Men",
+      Gender2 = "Women",
+      p_value_gender = p_val
+    ))
+  }
+}
+
+# Merge back to original dataframe if you want to include the p-values
+combined_df_sex_with_p <- merge(combined_df_sex, gender_comparison_results, by = c("BA", "model"), all.x = TRUE)
+```
+
+## 2.8 Saving
+```{r}
+write.table(as.data.frame(combined_df_sex_with_p), "combined_sex_main.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
