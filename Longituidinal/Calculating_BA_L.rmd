@@ -1,0 +1,226 @@
+---
+title: "Calculating_BA_L"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-04-10
+---
+
+Input data: AMORIS (longitudinal) and sampleIDs from the baseline training set. An individual can have several rows if they have repeated measurements. 
+
+Important note: We want the training set to be the same as for AMORIS (baseline).
+
+# 1.0 Preparing variables
+
+## 1.1 Loading packages
+```{r}
+options(repos = "http://nexus.ki.se/repository/cran.r-project.org")
+.libPaths("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/shun_trial/lib")
+source("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/shun_trial/function.R")
+
+library(haven)
+library(broom)
+library(dplyr)
+library(flexsurv)
+library(ggplot2)
+library(htmlTable)
+library(survival)
+library(survey)
+library(tidyr)
+library(rmarkdown)
+```
+
+## 1.2 Load data 
+```{r}
+n_amoris <- read_sas("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/Data_ADRD/AMORIS_20240417.sas7bdat") 
+```
+
+```{r}
+# Define the path, IDs for individuals selected at baseline
+path_to_file <- "W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/sampleIDs_baseline.csv"
+
+# Read the file with custom settings
+sampleID_df <- read.table(path_to_file,
+                          sep = ";",
+                          dec = ",",
+                          header = TRUE,
+                          fileEncoding = "Latin1")
+```
+
+## 1.3 Defining our selected biomarkers
+```{r}
+biomarkers = c("S_Alb", "S_Krea", "TC", "TG", "S_K", "S_Urea", "S_LD", "S_Ca", "S_Urat", "S_FAMN", "S_Hapt", "fS_Gluk") 
+n_amoris <- n_amoris[complete.cases(n_amoris[, biomarkers]), ]
+```
+
+## 1.4 Variables required by BioAge
+```{r}
+colnames(n_amoris)[colnames(n_amoris) == "Kon"] <- "gender"
+colnames(n_amoris)[colnames(n_amoris) == "Alder"] <- "age" #already called age
+colnames(n_amoris)[colnames(n_amoris) == "Id"] <- "sampleID"
+
+n_amoris <- n_amoris %>%
+  mutate(status = ifelse(is.na(DODSDATn), 0, 1)) %>%
+  mutate(time = as.numeric(difftime(lastDate, firstDate, units = "weeks")) / 4.33)
+```
+
+## 1.5 Selecting the sampleIDs at baseline for our longituidinal samples
+```{r}
+sampleID_df <- sampleID_df %>%
+  rename(sampleID = to1po2.sampleID)
+
+N_AMORIS <- n_amoris %>%
+  semi_join(sampleID_df, by = "sampleID")
+```
+
+## 1.6 Age resolution
+```{r}
+#save integer age col before we relace it
+N_AMORIS$age_int <- N_AMORIS$age
+
+# Age at last test for biomarkers/BA
+N_AMORIS <- N_AMORIS %>%
+  mutate(age = as.numeric(difftime(Provtagningsdatum, FODDATn, units = "weeks")) / 52.25)
+  
+N_AMORIS <- N_AMORIS %>%
+  mutate(age = round(age, 2))
+```
+
+## 1.7 Loading test set
+```{r}
+# Define the path
+path_to_file <- "W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/training_set_baseline.csv"
+
+# Read the file with custom settings
+train_baseline <- read.table(path_to_file,
+                          sep = ";",
+                          dec = ",",
+                          header = TRUE,
+                          fileEncoding = "Latin1")
+```
+
+## 1.8 Separate test set from training set
+```{r}
+library(dplyr)
+
+test_longitud <- N_AMORIS %>%
+  anti_join(train_baseline, by = "sampleID")
+```
+
+## 1.9 Visual inspection
+```{r}
+# Load the ggplot2 package
+library(ggplot2)
+
+# Assuming 'amoris' DataFrame is already loaded and 'Kon' is your gender column with 1 for male and 2 for female
+# Convert the numeric codes to a factor to improve plot readability
+test_longitud$Sex <- factor(test_longitud$gender, levels = c(1, 2), labels = c("Men", "Women"))
+
+# Create overlapping histograms with transparency
+a_test_set <- ggplot(test_longitud, aes(x = age_int, fill = Sex)) +
+  geom_histogram(position = "identity", alpha = 0.5, binwidth = 1) +  # binwidth can be adjusted based on data
+  scale_fill_manual(values = c("#6BAED6", "#E78AC3")) +  # Colors can be adjusted
+  labs(x = "Age", y = "Count") +
+  theme_minimal()
+
+a_test_set
+```
+
+```{r}
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/a_test_set_l_bluepink.png", 
+    width = 6, height = 4, units = 'in', res = 600)
+print(a_test_set)  # Send plot to file
+dev.off()  # Close device
+```
+
+# 2.0 BioAge (KDM, PhenoAge)
+
+## 2.1 KDM
+```{r}
+## KDM
+train_f = kdm_calc(train_baseline %>%
+                     filter(gender ==2),
+                    #filter(age >=  25 & age <= 75, gender ==2),
+                   biomarkers, fit = NULL, s_ba2 = NULL)
+train_m = kdm_calc(train_baseline %>%
+                     filter(gender ==1),
+                    #filter(age >= 25 & age <= 75, gender ==1),
+                   biomarkers, fit = NULL, s_ba2 = NULL)
+kdm_f = kdm_calc(test_longitud %>%
+                   filter (gender ==2), #age >= 25 & age <= 75
+                 biomarkers,
+                 fit = train_f$fit,
+                 s_ba2 = train_f$fit$s_ba2)
+kdm_m = kdm_calc(test_longitud %>%
+                   filter (gender ==1), #age >= 25 & age <= 75
+                 biomarkers,
+                 fit = train_m$fit,
+                 s_ba2 = train_m$fit$s_ba2)
+to1po2_kdm = rbind(kdm_f$data,kdm_m$data)
+
+rm(train_f)
+rm(train_m)
+rm(kdm_f)
+rm(kdm_m)
+```
+
+## 2.2 Phenoage
+```{r}
+train = phenoage_calc(train_baseline, biomarkers)
+#Project into the AMORIS_2
+phenoage = phenoage_calc(test_longitud, biomarkers, fit = train$fit)
+#Extract phenoage dataset, trained on 1 projected on 2 = to1po2, previously data
+to1po2_phe = (phenoage$data)
+
+rm(phenoage)
+rm(train)
+```
+
+## 2.3 Merging
+```{r}
+# since it's longitudinal we need to consider how we merge the data 
+to1po2 <- left_join(test_longitud, to1po2_kdm[, c("sampleID", "Provtagningsdatum", "kdm", "kdm_advance")], 
+                    by = c("sampleID", "Provtagningsdatum")) %>%
+  left_join(., to1po2_phe[, c("sampleID", "Provtagningsdatum", "phenoage", "phenoage_advance")], 
+            by = c("sampleID", "Provtagningsdatum"))
+```
+
+## 2.4 Visual inspection of KDM and PhenoAge
+```{r}
+ agevar_ap = c("kdm","phenoage")
+ #prepare labels
+ label_ap = c("KDM AMORIS",
+              "PhenoAge AMORIS")
+ #plot age vs bioage
+ c_modified_kdm_phe <- plot_ba(to1po2, agevar_ap, label_ap)
+ 
+ print(c_modified_kdm_phe)
+```
+
+```{r}
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/c_corr_kdm_phe_l.png", 
+    width = 8, height = 4, units = 'in', res = 600)
+print(c_modified_kdm_phe)  # Send plot to file
+dev.off()  # Close device
+```
+
+## 2.6 Correlation with BA
+```{r}
+get_axis_type <- function(labels){
+  return(rep("float", length(labels)) %>% setNames(names(labels))) # Create function to generate axis_type variables for BAA plots
+}
+
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/c_corrplot_l_good.png", 
+    width = 6, height = 4.5, units = 'in', res = 600)
+
+plot_baa(data=to1po2,
+         agevar=names(c("kdm"="KDMAge", "kdm_advance"="KDM\nAge\nGap", "phenoage"="PhenoAge","phenoage_advance"="PhenoAge\nAge\nGap", "age"="Chronological\nage")), 
+         label = c("kdm" = "KDMAge\n","kdm_advance"="KDM\nAge\nGap",
+                        "phenoage" = "PhenoAge", "phenoage_advance"="PhenoAge\nAge\nGap",
+                        "age"="Chronological\nage"),
+         axis_type= c("kdm" = "float",
+                            "kdm_advance" = "float",
+                            "phenoage" = "float",
+                            "phenoage_advance" = "float",
+                            "age" = "float"))
+
+```

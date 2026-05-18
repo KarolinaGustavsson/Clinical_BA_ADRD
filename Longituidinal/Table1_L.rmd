@@ -1,0 +1,460 @@
+---
+title: "Table1_L"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-05-14
+---
+
+Input data: AMORIS (longitudinal) from fortable1_RMA.rmd
+
+# 1.0 Preparing 
+
+## 1.1 Loading table1
+```{r}
+library(table1)
+```
+
+## 1.2 Loading list of individuals who are biologically younger and older at baseline 
+```{r}
+kdm_groups <- read.table(
+  "W://C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/2025-06-06/Baseline/table1/table1_kdmgroups_baseline_perID.csv",
+  sep = ";",
+  dec = ",",
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  fileEncoding = "Latin1"
+)
+```
+
+```{r}
+# no doubles
+kdm_groups <- unique(kdm_groups[, c("sampleID", "KDM_group")])
+
+# adding column
+results_dt$KDM_group <- kdm_groups$KDM_group[
+  match(results_dt$sampleID, kdm_groups$sampleID)
+]
+
+# sanity test
+sum(is.na(results_dt$KDM_group))   # bör vara 0 om alla matchade
+table(results_dt$KDM_group)        # fördelning
+```
+
+## 1.3 Statistics regarding repeated measurements 
+```{r}
+## -------- setup: pick columns, order rows ----------
+time_var <- if ("prov_age" %in% names(results_dt)) "prov_age" else "age"
+grp_col  <- if ("kdm_a_group" %in% names(results_dt)) "kdm_a_group" else
+            if ("KDM_group"  %in% names(results_dt)) "KDM_group"  else
+            stop("No KDM group column found (expected 'kdm_a_group' or 'KDM_group').")
+
+results_dt <- results_dt[order(results_dt$sampleID, results_dt[[time_var]]), ]
+
+## -------- per-person summaries (one row/person) ----------
+n_meas <- aggregate(results_dt[[time_var]],
+                    by = list(sampleID = results_dt$sampleID,
+                              group     = results_dt[[grp_col]]),
+                    FUN = length)
+names(n_meas)[3] <- "n_meas"
+
+years_span <- aggregate(results_dt[[time_var]],
+                        by = list(sampleID = results_dt$sampleID,
+                                  group     = results_dt[[grp_col]]),
+                        FUN = function(x) diff(range(x, na.rm = TRUE)))
+names(years_span)[3] <- "years_span"
+
+mean_between <- aggregate(results_dt[[time_var]],
+                          by = list(sampleID = results_dt$sampleID,
+                                    group     = results_dt[[grp_col]]),
+                          FUN = function(x) {
+                            x <- sort(x)
+                            if (length(x) > 1) mean(diff(x)) else NA_real_
+                          })
+names(mean_between)[3] <- "mean_years_between"
+
+person <- Reduce(function(a, b) merge(a, b, by = c("sampleID", "group"), all = TRUE),
+                 list(n_meas, years_span, mean_between))
+
+## -------- counts for headers/rows ----------
+participants_by_group <- tapply(person$sampleID, person$group,
+                                function(x) length(unique(x)))
+measurements_by_group <- tapply(person$n_meas, person$group, sum, na.rm = TRUE)
+
+participants_total <- length(unique(person$sampleID))
+measurements_total <- sum(person$n_meas, na.rm = TRUE)
+
+## desired column order
+levs <- names(participants_by_group)
+ord  <- if (all(c("High Age Gap", "Low Age Gap") %in% levs)) {
+  c("High Age Gap", "Low Age Gap")
+} else {
+  levs
+}
+
+## -------- helper: compute stats and format ----------
+summ_stats <- function(x) {
+  c(mean   = mean(x, na.rm = TRUE),
+    sd     = sd(x, na.rm = TRUE),
+    median = stats::median(x, na.rm = TRUE),
+    q1     = stats::quantile(x, 0.25, na.rm = TRUE),
+    q3     = stats::quantile(x, 0.75, na.rm = TRUE))
+}
+
+fmt_msd <- function(v) if (is.na(v["mean"])) "NA" else sprintf("%.2f ± %.2f", v["mean"], v["sd"])
+fmt_med <- function(v) if (is.na(v["median"])) "NA" else sprintf("%.2f [%.2f, %.2f]", v["median"], v["q1"], v["q3"])
+
+by_group_stats <- function(vec, grp) {
+  sp <- split(vec, grp)
+  sp <- sp[ord]                                  # order columns
+  out <- lapply(sp, summ_stats)
+  out$Total <- summ_stats(vec)
+  out
+}
+
+S_years   <- by_group_stats(person$years_span,         person$group)
+S_between <- by_group_stats(person$mean_years_between, person$group)
+S_nmeas   <- by_group_stats(person$n_meas,             person$group)
+
+cols <- c(ord, "Total")
+
+## -------- helper: p-values for participant-level summaries ----------
+fmt_p <- function(p) {
+  if (is.na(p)) "" else if (p < 0.001) "<0.001" else sprintf("%.3f", p)
+}
+
+get_p_wilcox <- function(vec, grp, ord) {
+  keep <- !is.na(vec) & !is.na(grp)
+  vec <- vec[keep]
+  grp <- as.character(grp[keep])
+
+  grp <- grp[grp %in% ord]
+  vec <- vec[keep][as.character(grp) %in% ord]
+
+  # cleaner re-subset
+  keep2 <- !is.na(vec) & !is.na(grp) & grp %in% ord
+  vec <- vec[keep2]
+  grp <- factor(grp[keep2], levels = ord)
+
+  if (length(levels(droplevels(grp))) != 2) return(NA_real_)
+
+  out <- tryCatch(
+    wilcox.test(vec ~ grp, exact = FALSE)$p.value,
+    error = function(e) NA_real_
+  )
+  out
+}
+
+p_years   <- fmt_p(get_p_wilcox(person$years_span,         person$group, ord))
+p_between <- fmt_p(get_p_wilcox(person$mean_years_between, person$group, ord))
+p_nmeas   <- fmt_p(get_p_wilcox(person$n_meas,             person$group, ord))
+
+## -------- assemble the table (character matrix) ----------
+tab <- rbind(
+  "Participants, n" = c(as.integer(participants_by_group[ord]), participants_total, ""),
+  "Measurements, n" = c(as.integer(measurements_by_group[ord]), measurements_total, ""),
+
+  "Years between first and last measurement — Mean (SD)" =
+    c(sapply(S_years[cols], fmt_msd), p_years),
+  "Years between first and last measurement — Median [IQR]" =
+    c(sapply(S_years[cols], fmt_med), ""),
+
+  "Mean years between measurements — Mean (SD)" =
+    c(sapply(S_between[cols], fmt_msd), p_between),
+  "Mean years between measurements — Median [IQR]" =
+    c(sapply(S_between[cols], fmt_med), ""),
+
+  "Number of measurements per participant — Mean (SD)" =
+    c(sapply(S_nmeas[cols], fmt_msd), p_nmeas),
+  "Number of measurements per participant — Median [IQR]" =
+    c(sapply(S_nmeas[cols], fmt_med), "")
+)
+
+# set nice column names
+colnames(tab) <- c(cols, "P-value")
+
+# convert to data.frame for CSV
+tab_df <- data.frame(Statistic = rownames(tab), tab, row.names = NULL, check.names = FALSE)
+
+## -------- sanity checks ----------
+# participants per stratum should equal unique persons
+stopifnot(sum(participants_by_group) == participants_total)
+# measurements total should equal number of rows in results_dt
+stopifnot(measurements_total == nrow(results_dt))
+
+## -------- write CSV ----------
+write.table(
+  tab_df,
+  "table_kdm_longitud_summary_part1_p.csv",
+  sep = ";", dec = ",",
+  row.names = FALSE, quote = FALSE,
+  fileEncoding = "Latin1"
+)
+
+# If you want to peek:
+# print(tab_df, row.names = FALSE)
+```
+
+## 1.4 Harmonising variables
+```{r}
+# Calculate age at LastDate in years
+results_dt$AgeAtLastDate <- as.numeric(difftime(results_dt$lastDate, results_dt$FODDATn, units = "days") / 365.25)
+```
+
+```{r}
+results_dt$Mortality <- ifelse(results_dt$status == 1, "Dead", "Alive")
+```
+
+```{r}
+results_dt$FollowUpTime <- results_dt$AgeAtLastDate - results_dt$age
+```
+
+```{r}
+# Create Sex column based on gender
+results_dt$Sex <- ifelse(results_dt$gender == "1", "Men", 
+                     ifelse(results_dt$gender == "2", "Women", NA))
+```
+
+```{r}
+# Define levels explicitly with "Missing" last
+results_dt$Income_quartile <- factor(
+  ifelse(is.na(results_dt$income_bins), "Missing", paste0("Q", results_dt$income_bins)),
+  levels = c("Q1", "Q2", "Q3", "Q4", "Missing")
+)
+```
+
+```{r} 
+# Categorising for easier overview
+results_dt$Education_levelt <- ifelse(results_dt$NewUtbNiva %in% c(1, 2), "1 Basic",
+                           ifelse(results_dt$NewUtbNiva %in% c(3, 4), "2. Secondary",
+                           ifelse(results_dt$NewUtbNiva %in% c(5, 6, 7), "3. Post-secondary",
+                           ifelse(is.na(results_dt$NewUtbNiva), "4. Unknown", "Other"))))
+```
+
+```{r}
+SveDem <- read_sas("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/Data_ADRD/SveDem.sas7bdat")
+
+# Create the new column by matching sampleID from to1po2 to Id in SveDem
+results_dt$S_INDATUM <- SveDem$DIAGNOSIS_DATE_BR[match(results_dt$sampleID, SveDem$Id)]
+
+results_dt$INDATUM <- o_amoris$INDATUM[match(results_dt$sampleID, o_amoris$sampleID)]
+
+results_dt$FDATUM <- o_amoris$FDATUM[match(results_dt$sampleID, o_amoris$sampleID)]
+```
+
+```{r}
+# here we want to link the cols from o_amoris to results_dt
+
+results_dt$first_diag_date <- pmin(results_dt$S_INDATUM, results_dt$INDATUM, results_dt$FDATUM, na.rm = TRUE)
+
+
+results_dt$age_of_diagnosis <- ifelse(
+  !is.na(results_dt$first_diag_date),
+  as.numeric(difftime(results_dt$first_diag_date, results_dt$FODDATn, units = "days")) / 365.25,
+  NA
+)
+
+label(results_dt$age_of_diagnosis) <- "Age at diagnosis (years, SD)"
+```
+
+```{r}
+results_dt$fasting_status <- ifelse(results_dt$fastestatus == "F", "Fasting overnight",
+                          ifelse(results_dt$fastestatus == "N4", "Fasting 4h",
+                          ifelse(results_dt$fastestatus %in% c("N", "S"), "Non-fasting",
+                          "Unknown")))
+```
+
+## 1.5 Adding labels
+```{r}
+# Make sure variables are labeled
+label(results_dt$kdm) <- "KDMAge (years, SD)"
+label(results_dt$phenoage) <- "PhenoAge (years, SD)"
+label(results_dt$kdm_advance) <- "KDM Agegap (years, SD)"
+label(results_dt$phenoage_advance) <- "PhenoAge Agegap (years, SD)"
+label(results_dt$age) <- "Age at baseline (years, SD)"
+label(results_dt$FollowUpTime) <- "Follow up time"
+label(results_dt$Mortality) <- "Mortality at follow up"
+label(results_dt$income_bins) <- "Income quartiles"
+label(results_dt$NewUtbNiva) <- "Education level"
+label(results_dt$AgeAtLastDate) <- "Age at follow up"
+label(results_dt$fasting_status) <- "Fasting status"
+```
+
+## 1.6 The first row from the longitudinal subset
+```{r}
+# --- pick time var and order ---
+time_var <- if ("prov_age" %in% names(results_dt)) "prov_age" else "age"
+results_dt <- results_dt[order(results_dt$sampleID, results_dt[[time_var]]), ]
+
+# --- take first row per person (keeps all columns) ---
+idx_first <- !duplicated(results_dt$sampleID)
+baseline_longitud <- results_dt[idx_first, , drop = FALSE]
+
+# sanity
+stopifnot(nrow(baseline_longitud) == length(unique(results_dt$sampleID)))
+```
+
+## 1.7 Custom functions for rendering tables
+```{r}
+# strata
+grp_col <- if ("kdm_strata" %in% names(baseline_longitud)) "kdm_strata" else
+           if ("KDM_group"  %in% names(baseline_longitud)) "KDM_group"  else
+           if ("kdm_a_group"%in% names(baseline_longitud)) "kdm_a_group" else
+           stop("No KDM group column found.")
+baseline_longitud$kdm_strata_tbl1 <- as.character(baseline_longitud[[grp_col]])
+baseline_longitud <- subset(baseline_longitud, !is.na(kdm_strata_tbl1))
+
+# gender -> factor (Men/Women) if coded 1/2
+if ("gender" %in% names(baseline_longitud)) {
+  if (is.numeric(baseline_longitud$gender) || is.integer(baseline_longitud$gender)) {
+    baseline_longitud$gender <- factor(baseline_longitud$gender, levels=c(1,2), labels=c("Men","Women"))
+  }
+}
+
+# ensure binaries are 0/1 numerics (NOT factors/Yes-No)
+bin_vars <- intersect(c("ADRD","Alzheimers","Vascular","Other"), names(baseline_longitud))
+for (v in bin_vars) {
+  x <- baseline_longitud[[v]]
+  if (is.factor(x)) {
+    # assume levels like "No","Yes" or "0","1"
+    lv <- levels(x)
+    if (all(c("No","Yes") %in% lv)) baseline_longitud[[v]] <- as.numeric(x == "Yes")
+    else                            baseline_longitud[[v]] <- as.numeric(as.character(x))
+  } else if (is.character(x)) {
+    if (all(unique(na.omit(x)) %in% c("No","Yes"))) baseline_longitud[[v]] <- as.numeric(x == "Yes")
+    else                                            baseline_longitud[[v]] <- as.numeric(x)
+  } else {
+    # already numeric/logical -> coerce to 0/1
+    baseline_longitud[[v]] <- as.numeric(x %in% c(1, TRUE))
+  }
+}
+
+# explicit baseline age column
+baseline_longitud$baseline_age <- baseline_longitud[[time_var]]
+```
+```{r}
+label(baseline_longitud$baseline_age) <- "Age at baseline (years, SD)"
+if ("gender" %in% names(baseline_longitud))     label(baseline_longitud$gender)     <- "Gender"
+if ("status" %in% names(baseline_longitud))     label(baseline_longitud$status)     <- "Event status"
+if ("ADRD" %in% names(baseline_longitud))       label(baseline_longitud$ADRD)       <- "ADRD"
+if ("Alzheimers" %in% names(baseline_longitud)) label(baseline_longitud$Alzheimers) <- "Alzheimer's"
+if ("Vascular" %in% names(baseline_longitud))   label(baseline_longitud$Vascular)   <- "Vascular dementia"
+if ("Other" %in% names(baseline_longitud))      label(baseline_longitud$Other)      <- "Other dementia"
+
+# Relabel gender → Sex
+label(baseline_longitud$gender) <- "Sex"
+baseline_longitud$gender <- factor(baseline_longitud$gender,
+                                levels = c(1, 2),
+                                labels = c("Men", "Women"))
+```
+
+```{r}
+render.custom <- function(x, ...) {
+  if (is.numeric(x) && length(unique(na.omit(x))) == 2 && all(unique(na.omit(x)) %in% c(0,1))) {
+    count <- sum(x, na.rm = TRUE)
+    if (count == 0) {
+      return("-")
+    } else {
+      return(sprintf("%d (%.2f%%)", count, 100 * mean(x, na.rm = TRUE)))
+    }
+  } else if (is.numeric(x)) {
+    return(sprintf("%.2f ± %.2f", mean(x, na.rm = TRUE), sd(x, na.rm = TRUE)))
+  } else {
+    table1::render.default(x, ...)
+  }
+}
+
+# headers show participant N
+render.strat <- function(label, n, ...) sprintf("%s (participants n = %s)", label, format(n, big.mark=" "))
+```
+
+## 1.8 P-value function
+```{r}
+pvalue <- function(x, ...) {
+  ## Keep only the two comparison groups, exclude "Total"
+  x <- x[1:2]
+  
+  y <- unlist(x)
+  g <- factor(rep(seq_along(x), times = sapply(x, length)))
+  
+  keep <- !is.na(y) & !is.na(g)
+  y <- y[keep]
+  g <- g[keep]
+  
+  if (length(unique(g)) < 2) return("")
+  
+  ## Treat binary 0/1 as categorical
+  is_binary <- is.numeric(y) && all(unique(y) %in% c(0, 1))
+  
+  if (is.numeric(y) && !is_binary) {
+    p <- tryCatch(t.test(y ~ g)$p.value, error = function(e) NA)
+  } else {
+    tab <- table(y, g)
+    p <- tryCatch({
+      if (any(tab < 5)) {
+        fisher.test(tab)$p.value
+      } else {
+        chisq.test(tab, correct = FALSE)$p.value
+      }
+    }, error = function(e) NA)
+  }
+  
+  if (is.na(p)) {
+    ""
+  } else if (p < 0.001) {
+    "<0.001"
+  } else {
+    sprintf("%.3f", p)
+  }
+}
+```
+
+## 1.9 Making table for first measurement in the longitudinal subset
+```{r}
+vars <- c("Sex","age","age_of_diagnosis","AgeAtLastDate","FollowUpTime", "Mortality", "Education_levelt","Income_quartile", bin_vars, "kdm_advance", "phenoage_advance") 
+vars <- vars[vars %in% names(baseline_longitud)]
+form <- as.formula(paste("~", paste(vars, collapse = " + "), "| kdm_strata_tbl1"))
+
+tbl_baseline_long <- table1::table1(
+  form,
+  data              = baseline_longitud,
+  overall           = "Total",
+  render.continuous = render.custom,
+  render.strat      = render.strat,
+  extra.col = list(`P-value` = pvalue) #optional
+)
+
+print(tbl_baseline_long)
+```
+
+```{r}
+write.table(as.data.frame(tbl_baseline_long), "table_kdm_longitud_baseline_summary_part2_p.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+## 1.10 Time stratified by diagnosis
+```{r}
+vars <- c("age","AgeAtLastDate","FollowUpTime")            # include what exists
+vars <- vars[vars %in% names(baseline_longitud)]
+form <- as.formula(paste("~", paste(vars, collapse = " + "), "| ADRD")) #1 = ADRD, 0 = not ADRD
+
+followuptime_byADRD <- table1::table1(
+  form,
+  data              = baseline_longitud,
+  overall           = "Total",
+  render.continuous = render.custom,
+  render.strat      = render.strat
+)
+
+print(followuptime_byADRD) 
+```
+
+```{r}
+write.table(as.data.frame(followuptime_byADRD), "followuptime_byADR_l.csv", sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```

@@ -1,0 +1,1227 @@
+---
+title: "Trajectories_L"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-05-14
+---
+
+Input data: AMORIS (longitudinal) dvs results_dt från BA_rate_L.rmd
+
+# 1.0 Preparing
+
+## 1.1 Selecting what to plot
+```{r}
+to1po2_women <- results_dt[results_dt$gender == 2, ]
+to1po2_men <- results_dt[results_dt$gender == 1, ]
+```
+
+## Optional: health checkups
+```{r}
+results_FH_dt <- results_dt[results_dt$debiteringskod %in% c("F", "H"), ] #Health checkups
+
+to1po2_FH_women <- results_dt[results_dt$debiteringskod %in% c("F", "H") & results_dt$gender == 2, ]
+
+to1po2_FH_men <- results_dt[results_dt$debiteringskod %in% c("F", "H") & results_dt$gender == 1, ]
+```
+
+# 2.0 Calculating trajectories binned by 5 years
+
+## 2.1 Phenoage
+```{r}
+# Load required packages
+library(dplyr)
+library(sandwich)
+library(lmtest)
+
+# --- Step 1: Prepare the data ---
+to1po2_clean <- to1po2_women %>% #results_dt for all or to1po2_FH for only those with health checkups
+  filter(!is.na(age), !is.na(phenoage)) %>%
+  group_by(sampleID) %>%
+  filter(n() >= 3) %>%
+  ungroup() %>%
+  mutate(
+    age_bin = cut(
+      age,
+      #breaks = seq(floor(min(age, na.rm = TRUE)),
+      #             ceiling(max(age, na.rm = TRUE)),
+      #             by = 5),
+      breaks = seq(17, ceiling(max(age, na.rm = TRUE)), by = 5),
+      include.lowest = TRUE,
+      right = FALSE
+    )
+  )
+
+# --- Step 2: Fit the model with interaction terms ---
+fit <- lm(phenoage ~ age + age:age_bin, data = to1po2_clean)
+coefs <- coef(fit)
+vcov_clustered <- vcovCL(fit, cluster = to1po2_clean$sampleID)
+
+# --- Step 3: Global Wald test ---
+interaction_terms <- grep("age:age_bin", names(coefs))
+estimates <- coefs[interaction_terms]
+V <- vcov_clustered[interaction_terms, interaction_terms]
+
+wald_stat <- t(estimates) %*% solve(V) %*% estimates
+df <- length(estimates)
+p_value <- 1 - pchisq(wald_stat, df)
+
+# --- Step 4: Compute slope estimates and confidence intervals ---
+z <- 1.96
+slope_table <- data.frame(
+  age_bin = levels(to1po2_clean$age_bin),
+  slope = NA,
+  se = NA,
+  lower_CI = NA,
+  upper_CI = NA
+)
+library(stringr)
+
+# Extract start and stop values from age_bin labels
+bounds <- str_extract_all(slope_table$age_bin, "[0-9.]+")
+slope_table$start <- as.numeric(sapply(bounds, `[`, 1))
+slope_table$stop <- as.numeric(sapply(bounds, `[`, 2))
+
+# Reference bin (first bin)
+base_slope <- coefs["age"]
+base_se <- sqrt(vcov_clustered["age", "age"])
+
+slope_table[1, "slope"] <- base_slope
+slope_table[1, "se"] <- base_se
+slope_table[1, "lower_CI"] <- base_slope - z * base_se
+slope_table[1, "upper_CI"] <- base_slope + z * base_se
+
+# All other bins
+for (i in 2:nrow(slope_table)) {
+  bin <- slope_table$age_bin[i]
+  term <- paste0("age:age_bin", bin)
+
+  est <- base_slope + coefs[term]
+
+  var_base <- vcov_clustered["age", "age"]
+  var_int  <- vcov_clustered[term, term]
+  covar    <- 2 * vcov_clustered["age", term]
+  se <- sqrt(var_base + var_int + covar)
+
+  slope_table[i, "slope"] <- est
+  slope_table[i, "se"] <- se
+  slope_table[i, "lower_CI"] <- est - z * se
+  slope_table[i, "upper_CI"] <- est + z * se
+}
+
+# --- Output ---
+cat("===== GLOBAL TEST (Wald) =====\n")
+cat("Wald statistic:", round(wald_stat, 3), "\n")
+cat("Degrees of freedom:", df, "\n")
+cat("P-value:", paste0("< ", .Machine$double.eps), "\n\n")
+
+cat("===== SLOPE ESTIMATES BY AGE BIN =====\n")
+print(slope_table)
+
+slope_table_all_phe <- slope_table
+```
+
+```{r}
+write.table(as.data.frame(slope_table),
+            file = "trajectory_table_phe.csv",
+            sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1") 
+```
+
+```{r}
+# Create a one-row summary table with global Wald test output
+wald_summary <- data.frame(
+  wald_statistic = as.numeric(wald_stat),
+  degrees_of_freedom = df,
+  p_value = as.numeric(p_value)
+)
+
+print(wald_summary)
+```
+
+```{r}
+write.table(as.data.frame(wald_summary),
+            file = "trajectory_table_wald_phe_FH.csv",
+            sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1") 
+```
+
+## 2.2 Creating figure (PhenoAge)
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+
+# Assume slope_table and clean_df already exist
+# Extract global intercept from model
+intercept <- coef(fit)["(Intercept)"]
+
+# Construct CI-based rotated rectangles
+plot_data <- slope_table %>%
+  rowwise() %>%
+  mutate(
+    x0 = start,
+    x1 = stop,
+    y0 = intercept + slope * x0,
+    y1 = intercept + slope * x1,
+
+    dx = x1 - x0,
+    dy = y1 - y0,
+    L = sqrt(dx^2 + dy^2),
+
+    nx = -dy / L,
+    ny = dx / L,
+
+    slope_ci = (upper_CI - lower_CI) / 2,
+    w = slope_ci * dx / sqrt(1 + slope^2),
+
+    xA = x0 + w * nx,
+    yA = y0 + w * ny,
+    xB = x1 + w * nx,
+    yB = y1 + w * ny,
+    xC = x1 - w * nx,
+    yC = y1 - w * ny,
+    xD = x0 - w * nx,
+    yD = y0 - w * ny,
+
+    label_x = (x0 + x1) / 2,
+    label_y = (y0 + y1) / 2,
+    #label = round(slope, 2),
+    label = sprintf("%.2f", slope),
+    group = paste0("bin_", start)
+  ) %>%
+  ungroup()
+
+plot_data <- plot_data %>%
+  filter(stop <= 82)
+
+# Long-format polygon
+polygon_df <- plot_data %>%
+  rowwise() %>%
+  do(data.frame(
+    group = .$group,
+    x = c(.$xA, .$xB, .$xC, .$xD),
+    y = c(.$yA, .$yB, .$yC, .$yD)
+  )) %>%
+  ungroup()
+
+# Optional spaghetti overlay toggle
+show_spaghetti <- TRUE
+
+#plot_data$label <- sprintf("%.2f", plot_data$label)
+
+# Start ggplot
+phenoage_plot <- ggplot()
+
+# Add spaghetti first (behind everything)
+if (show_spaghetti) {
+  set.seed(42)
+  subset_ids <- sample(unique(to1po2_clean$sampleID), floor(0.01 * length(unique(to1po2_clean$sampleID))))
+  spaghetti_df <- to1po2_clean %>% filter(sampleID %in% subset_ids)
+
+  # phenoage_plot <- phenoage_plot +
+  #   geom_line(
+  #     data = spaghetti_df,
+  #     aes(x = age, y = phenoage, group = sampleID),
+  #     color = "#0072B2", alpha = 0.1, linewidth = 0.3
+  #   ) +
+  #   geom_point(
+  #     data = spaghetti_df,
+  #     aes(x = age, y = phenoage),
+  #     color = "#0072B2", alpha = 0.1, size = 0.5
+  #   )
+  
+  phenoage_plot <- phenoage_plot +
+  ## lines per participant
+  geom_line(
+    data = spaghetti_df,
+    aes(x = age, y = phenoage, group = sampleID),
+    color = "#0072B2", alpha = 0.30, linewidth = 0.3, show.legend = FALSE
+  ) +
+  ## tiny observation dots
+  geom_point(
+    data = spaghetti_df,
+    aes(x = age, y = phenoage),
+    color = "#0072B2", alpha = 0.50, size = 0.10, show.legend = FALSE
+  )
+}
+
+# Add rotated CI rectangles, lines, and slope labels
+phenoage_plot <- phenoage_plot +
+  geom_polygon(
+    data = polygon_df,
+    aes(x = x, y = y, group = group),
+    fill = "darkred", alpha = 0.3
+  ) +
+  geom_segment(
+    data = plot_data,
+    aes(x = x0, xend = x1, y = y0, yend = y1),
+    color = "darkred", size = 1
+  ) +
+  # geom_text(
+  #   data = plot_data,
+  #   aes(x = label_x, y = label_y, label = label),
+  #   size = 3,
+  #   fontface = "bold",
+  #   color = "black",
+  #   vjust = -2,   # Raise label slightly above the segment
+  #   hjust = 0.6   # Center horizontally
+  # )
+  ggtext::geom_richtext(
+  data = plot_data,
+  aes(x = label_x, y = label_y, label = label),
+  size = 3,
+  fontface = "bold",
+  color = "black",
+  fill = alpha("white",0.4),       # background
+  label.color = NA,     # remove border around label
+  vjust = -2,
+  hjust = 0.6
+) +
+
+#phenoage_plot <- phenoage_plot +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  coord_fixed(ratio = 1, xlim = c(15, 85), ylim = c(15, 100)) +
+  scale_x_continuous(breaks = seq(10, 85, by = 10)) +
+  scale_y_continuous(breaks = seq(10, 100, by = 10)) +
+  labs(x = "Chronological Age", y = "PhenoAge") +
+  theme_minimal()
+
+print(phenoage_plot)
+```
+
+```{r}
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/trajectory_all_phe_v4_spag.png", 
+    width = 6, height = 6, units = 'in', res = 1000)
+print(phenoage_plot)  # Send plot to file
+dev.off()  # Close device
+```
+
+## 2.3 KDM
+```{r}
+# Load required packages
+library(dplyr)
+library(sandwich)
+library(lmtest)
+
+# --- Step 1: Prepare the data ---
+to1po2_clean <- results_dt %>% #results_dt for all or to1po2_FH for those with health checkups, MAIN results_dt
+  filter(!is.na(age), !is.na(kdm)) %>%
+  group_by(sampleID) %>%
+  filter(n() >= 3) %>%
+  ungroup() %>%
+  mutate(
+    age_bin = cut(
+      age,
+      #breaks = seq(floor(min(age, na.rm = TRUE)),
+      #             ceiling(max(age, na.rm = TRUE)),
+      #             by = 5),
+      breaks = seq(17, ceiling(max(age, na.rm = TRUE)), by = 5),
+      include.lowest = TRUE,
+      right = FALSE
+    )
+  )
+
+# --- Step 2: Fit the model with interaction terms ---
+fit <- lm(kdm ~ age + age:age_bin, data = to1po2_clean)
+coefs <- coef(fit)
+vcov_clustered <- vcovCL(fit, cluster = to1po2_clean$sampleID)
+
+# --- Step 3: Global Wald test ---
+interaction_terms <- grep("age:age_bin", names(coefs))
+estimates <- coefs[interaction_terms]
+V <- vcov_clustered[interaction_terms, interaction_terms]
+
+wald_stat <- t(estimates) %*% solve(V) %*% estimates
+df <- length(estimates)
+p_value <- 1 - pchisq(wald_stat, df)
+
+# --- Step 4: Compute slope estimates and confidence intervals ---
+z <- 1.96
+slope_table <- data.frame(
+  age_bin = levels(to1po2_clean$age_bin),
+  slope = NA,
+  se = NA,
+  lower_CI = NA,
+  upper_CI = NA
+)
+
+library(stringr)
+
+# Extract start and stop values from age_bin labels
+bounds <- str_extract_all(slope_table$age_bin, "[0-9.]+")
+slope_table$start <- as.numeric(sapply(bounds, `[`, 1))
+slope_table$stop <- as.numeric(sapply(bounds, `[`, 2))
+
+# Reference bin (first bin)
+base_slope <- coefs["age"]
+base_se <- sqrt(vcov_clustered["age", "age"])
+
+slope_table[1, "slope"] <- base_slope
+slope_table[1, "se"] <- base_se
+slope_table[1, "lower_CI"] <- base_slope - z * base_se
+slope_table[1, "upper_CI"] <- base_slope + z * base_se
+
+# All other bins
+for (i in 2:nrow(slope_table)) {
+  bin <- slope_table$age_bin[i]
+  term <- paste0("age:age_bin", bin)
+  
+  est <- base_slope + coefs[term]
+  
+  var_base <- vcov_clustered["age", "age"]
+  var_int  <- vcov_clustered[term, term]
+  covar    <- 2 * vcov_clustered["age", term]
+  se <- sqrt(var_base + var_int + covar)
+  
+  slope_table[i, "slope"] <- est
+  slope_table[i, "se"] <- se
+  slope_table[i, "lower_CI"] <- est - z * se
+  slope_table[i, "upper_CI"] <- est + z * se
+}
+
+# --- Step 5: Ensure numeric and round all numeric columns ---
+slope_table <- slope_table %>%
+  mutate(across(where(is.numeric), ~ round(., 4)))
+
+# --- Output ---
+cat("===== GLOBAL TEST (Wald) =====\n")
+cat("Wald statistic:", round(wald_stat, 3), "\n")
+cat("Degrees of freedom:", df, "\n")
+cat("P-value:", paste0("< ", .Machine$double.eps), "\n\n")
+
+cat("===== SLOPE ESTIMATES BY AGE BIN =====\n")
+print(slope_table)
+slope_table_all_kdm <- slope_table
+```
+
+```{r}
+write.table(as.data.frame(slope_table_all_kdm),
+            file = "trajectory_table_kdm_FH.csv",
+            sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1") 
+```
+
+```{r}
+# Create a one-row summary table with global Wald test output
+wald_summary <- data.frame(
+  wald_statistic = as.numeric(wald_stat),
+  degrees_of_freedom = df,
+  p_value = as.numeric(p_value)
+)
+
+print(wald_summary)
+```
+
+```{r}
+write.table(as.data.frame(wald_summary),
+            file = "trajectory_table_wald_kdm_FH.csv",
+            sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1") 
+```
+
+## 2.4 Creating figure (KDM)
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+
+# Assume slope_table and to1po2_clean already exist
+# Extract global intercept from model
+intercept <- coef(fit)["(Intercept)"]
+
+# Construct CI-based rotated rectangles
+plot_data <- slope_table %>%
+  rowwise() %>%
+  mutate(
+    x0 = start,
+    x1 = stop,
+    y0 = intercept + slope * x0,
+    y1 = intercept + slope * x1,
+
+    dx = x1 - x0,
+    dy = y1 - y0,
+    L = sqrt(dx^2 + dy^2),
+
+    nx = -dy / L,
+    ny =  dx / L,
+
+    slope_ci = (upper_CI - lower_CI) / 2,
+    w = slope_ci * dx / sqrt(1 + slope^2),
+
+    xA = x0 + w * nx,
+    yA = y0 + w * ny,
+    xB = x1 + w * nx,
+    yB = y1 + w * ny,
+    xC = x1 - w * nx,
+    yC = y1 - w * ny,
+    xD = x0 - w * nx,
+    yD = y0 - w * ny,
+
+    label_x = (x0 + x1) / 2,
+    label_y = (y0 + y1) / 2,
+    label = round(slope, 2),
+    group = paste0("bin_", start)
+  ) %>%
+  ungroup()
+
+plot_data <- plot_data %>%
+  filter(stop <= 82)
+
+# Long-format polygon
+polygon_df <- plot_data %>%
+  rowwise() %>%
+  do(data.frame(
+    group = .$group,
+    x = c(.$xA, .$xB, .$xC, .$xD),
+    y = c(.$yA, .$yB, .$yC, .$yD)
+  )) %>%
+  ungroup()
+
+# Optional spaghetti overlay toggle
+show_spaghetti <- TRUE
+
+plot_data$label <- sprintf("%.2f", plot_data$label)
+
+# Start ggplot
+kdm_plot <- ggplot()
+
+# Add spaghetti first (behind everything)
+if (show_spaghetti) {
+  set.seed(42)
+  subset_ids <- sample(unique(to1po2_clean$sampleID), floor(0.01 * length(unique(to1po2_clean$sampleID))))
+  spaghetti_df <- to1po2_clean %>% filter(sampleID %in% subset_ids)
+
+#   kdm_plot <- kdm_plot +
+#     geom_line(
+#       data = spaghetti_df,
+#       aes(x = age, y = kdm, group = sampleID),
+#       color = "#0072B2", alpha = 0.1, linewidth = 0.3
+#     ) +
+#     geom_point(
+#       data = spaghetti_df,
+#       aes(x = age, y = kdm),
+#       color = "#0072B2", alpha = 0.1, size = 0.5
+#     )
+  
+    kdm_plot <- kdm_plot +
+  ## lines per participant
+  geom_line(
+    data = spaghetti_df,
+    aes(x = age, y = kdm, group = sampleID),
+    color = "#0072B2", alpha = 0.30, linewidth = 0.3, show.legend = FALSE
+  ) +
+  ## tiny observation dots
+  geom_point(
+    data = spaghetti_df,
+    aes(x = age, y = kdm),
+    color = "#0072B2", alpha = 0.50, size = 0.10, show.legend = FALSE
+  )
+ }
+
+# Add rotated CI rectangles, lines, and slope labels
+kdm_plot <- kdm_plot +
+  geom_polygon(
+    data = polygon_df,
+    aes(x = x, y = y, group = group),
+    fill = "darkred", alpha = 0.3
+  ) +
+  geom_segment(
+    data = plot_data,
+    aes(x = x0, xend = x1, y = y0, yend = y1),
+    color = "darkred", size = 1
+  ) +
+  # geom_text(
+  #   data = plot_data,
+  #   aes(x = label_x, y = label_y, label = label),
+  #   color = "black", size = 3
+  # ) +
+  # geom_text(
+  #   data = plot_data,
+  #   aes(x = label_x, y = label_y, label = label),
+  #   size = 3,
+  #   fontface = "bold",
+  #   color = "black",
+  #   vjust = -2,  # Raise label slightly above the segment
+  #   hjust = 0.6    # Center horizontally
+  # ) +
+ggtext::geom_richtext(
+  data = plot_data,
+  aes(x = label_x, y = label_y, label = label),
+  size = 3,
+  fontface = "bold",
+  color = "black",
+  fill = alpha("white",0.4),       # background
+  label.color = NA,     # remove border around label
+  vjust = -2,
+  hjust = 0.6
+) +
+  
+  
+  
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  coord_fixed(ratio = 1, xlim = c(15, 85), ylim = c(15, 100)) +
+  scale_x_continuous(breaks = seq(10, 80, by = 10)) +
+  scale_y_continuous(breaks = seq(10, 100, by = 10)) +
+  labs(x = "Chronological Age", y = "KDM") +
+  theme_minimal()
+
+print(kdm_plot)
+
+```
+
+```{r}
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/trajectory_kdm_men_v4_spag.png", 
+    width = 6, height = 6, units = 'in', res = 1000)
+print(kdm_plot)  # Send plot to file
+dev.off()  # Close device
+```
+
+## 2.5 Creating figure colored by density (PhenoAge)
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(MASS)
+library(fields)
+
+# Assume slope_table, to1po2_clean, and fit already exist
+
+# Extract global intercept from model
+intercept <- coef(fit)["(Intercept)"]
+
+# Construct CI-based rotated rectangles
+plot_data <- slope_table %>%
+  rowwise() %>%
+  mutate(
+    x0 = start,
+    x1 = stop,
+    y0 = intercept + slope * x0,
+    y1 = intercept + slope * x1,
+
+    dx = x1 - x0,
+    dy = y1 - y0,
+    L = sqrt(dx^2 + dy^2),
+
+    nx = -dy / L,
+    ny = dx / L,
+
+    slope_ci = (upper_CI - lower_CI) / 2,
+    w = slope_ci * dx / sqrt(1 + slope^2),
+
+    xA = x0 + w * nx,
+    yA = y0 + w * ny,
+    xB = x1 + w * nx,
+    yB = y1 + w * ny,
+    xC = x1 - w * nx,
+    yC = y1 - w * ny,
+    xD = x0 - w * nx,
+    yD = y0 - w * ny,
+
+    label_x = (x0 + x1) / 2,
+    label_y = (y0 + y1) / 2,
+    label = sprintf("%.2f", slope),
+    group = paste0("bin_", start)
+  ) %>%
+  ungroup()
+
+plot_data <- plot_data %>%
+  filter(stop <= 82)
+
+# Long-format polygon
+polygon_df <- plot_data %>%
+  rowwise() %>%
+  do(data.frame(
+    group = .$group,
+    x = c(.$xA, .$xB, .$xC, .$xD),
+    y = c(.$yA, .$yB, .$yC, .$yD)
+  )) %>%
+  ungroup()
+
+# Optional spaghetti overlay toggle
+show_spaghetti <- TRUE
+
+# Start ggplot
+phenoage_plot <- ggplot()
+
+# Add spaghetti first (behind everything)
+if (show_spaghetti) {
+  set.seed(42)
+  subset_ids <- sample(
+    unique(to1po2_clean$sampleID),
+    floor(0.01 * length(unique(to1po2_clean$sampleID)))
+  )
+
+  spaghetti_df <- to1po2_clean %>%
+    filter(sampleID %in% subset_ids)
+
+  # Same density approach as your previous KDM plot, adapted to phenoage
+  add_kde_density <- function(df, x = "age", y = "phenoage", n = 250) {
+    xx <- df[[x]]
+    yy <- df[[y]]
+
+    ok <- is.finite(xx) & is.finite(yy)
+
+    out <- df
+    out$dens <- NA_real_
+
+    if (sum(ok) < 2 || length(unique(xx[ok])) < 2 || length(unique(yy[ok])) < 2) {
+      return(out)
+    }
+
+    kde <- MASS::kde2d(xx[ok], yy[ok], n = n)
+    surf <- list(x = kde$x, y = kde$y, z = kde$z)
+
+    out$dens[ok] <- fields::interp.surface(surf, cbind(xx[ok], yy[ok]))
+    out
+  }
+
+  spag_d <- spaghetti_df %>%
+    add_kde_density(x = "age", y = "phenoage", n = 250) %>%
+    group_by(sampleID) %>%
+    arrange(age, .by_group = TRUE) %>%
+    mutate(
+      xend = lead(age),
+      yend = lead(phenoage),
+      dens_seg = (dens + lead(dens)) / 2
+    ) %>%
+    ungroup() %>%
+    filter(!is.na(xend), !is.na(yend), !is.na(dens_seg))
+
+  phenoage_plot <- phenoage_plot +
+    # tiny observation dots first
+    geom_point(
+      data = spaghetti_df,
+      aes(x = age, y = phenoage),
+      alpha = 0.50,
+      size = 0.10,
+      show.legend = FALSE
+    ) +
+    # density-colored spaghetti segments
+    geom_segment(
+      data = spag_d,
+      aes(x = age, y = phenoage, xend = xend, yend = yend, color = dens_seg),
+      linewidth = 0.3,
+      alpha = 0.30,
+      lineend = "round",
+      show.legend = FALSE
+    ) +
+    guides(color = "none")
+}
+
+# Add rotated CI rectangles, lines, and slope labels
+phenoage_plot <- phenoage_plot +
+  geom_polygon(
+    data = polygon_df,
+    aes(x = x, y = y, group = group),
+    fill = "darkred", alpha = 0.3
+  ) +
+  geom_segment(
+    data = plot_data,
+    aes(x = x0, xend = x1, y = y0, yend = y1),
+    color = "darkred", size = 1
+  ) +
+  ggtext::geom_richtext(
+    data = plot_data,
+    aes(x = label_x, y = label_y, label = label),
+    size = 3,
+    fontface = "bold",
+    color = "black",
+    fill = alpha("white", 0.4),
+    label.color = NA,
+    vjust = -2,
+    hjust = 0.6
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  coord_fixed(ratio = 1, xlim = c(15, 85), ylim = c(15, 100)) +
+  scale_x_continuous(breaks = seq(10, 85, by = 10)) +
+  scale_y_continuous(breaks = seq(10, 100, by = 10)) +
+  labs(x = "Chronological Age", y = "PhenoAge") +
+  theme_minimal()
+
+print(phenoage_plot)
+```
+```{r}
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/trajectory_women_phe_v4_spag_Lukas.png", 
+    width = 6, height = 6, units = 'in', res = 1000)
+print(phenoage_plot)  # Send plot to file
+dev.off()  # Close device
+```
+
+## 2.6 Creating figure colored by density (KDM)
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(MASS)
+library(fields)
+
+# Assume slope_table, to1po2_clean, and fit already exist
+
+# Extract global intercept from model
+intercept <- coef(fit)["(Intercept)"]
+
+# Construct CI-based rotated rectangles
+plot_data <- slope_table %>%
+  rowwise() %>%
+  mutate(
+    x0 = start,
+    x1 = stop,
+    y0 = intercept + slope * x0,
+    y1 = intercept + slope * x1,
+
+    dx = x1 - x0,
+    dy = y1 - y0,
+    L = sqrt(dx^2 + dy^2),
+
+    nx = -dy / L,
+    ny = dx / L,
+
+    slope_ci = (upper_CI - lower_CI) / 2,
+    w = slope_ci * dx / sqrt(1 + slope^2),
+
+    xA = x0 + w * nx,
+    yA = y0 + w * ny,
+    xB = x1 + w * nx,
+    yB = y1 + w * ny,
+    xC = x1 - w * nx,
+    yC = y1 - w * ny,
+    xD = x0 - w * nx,
+    yD = y0 - w * ny,
+
+    label_x = (x0 + x1) / 2,
+    label_y = (y0 + y1) / 2,
+    label = sprintf("%.2f", slope),
+    group = paste0("bin_", start)
+  ) %>%
+  ungroup()
+
+plot_data <- plot_data %>%
+  filter(stop <= 82)
+
+# Long-format polygon
+polygon_df <- plot_data %>%
+  rowwise() %>%
+  do(data.frame(
+    group = .$group,
+    x = c(.$xA, .$xB, .$xC, .$xD),
+    y = c(.$yA, .$yB, .$yC, .$yD)
+  )) %>%
+  ungroup()
+
+# Optional spaghetti overlay toggle
+show_spaghetti <- TRUE
+
+# Start ggplot
+kdm_plot <- ggplot()
+
+# Add spaghetti first (behind everything)
+if (show_spaghetti) {
+  set.seed(42)
+  subset_ids <- sample(
+    unique(to1po2_clean$sampleID),
+    floor(0.01 * length(unique(to1po2_clean$sampleID)))
+  )
+
+  spaghetti_df <- to1po2_clean %>%
+    filter(sampleID %in% subset_ids)
+
+  # Same density approach as your previous KDM plot
+  add_kde_density <- function(df, x = "age", y = "kdm", n = 250) {
+    xx <- df[[x]]
+    yy <- df[[y]]
+
+    ok <- is.finite(xx) & is.finite(yy)
+
+    out <- df
+    out$dens <- NA_real_
+
+    if (sum(ok) < 2 || length(unique(xx[ok])) < 2 || length(unique(yy[ok])) < 2) {
+      return(out)
+    }
+
+    kde <- MASS::kde2d(xx[ok], yy[ok], n = n)
+    surf <- list(x = kde$x, y = kde$y, z = kde$z)
+
+    out$dens[ok] <- fields::interp.surface(surf, cbind(xx[ok], yy[ok]))
+    out
+  }
+
+  spag_d <- spaghetti_df %>%
+    add_kde_density(x = "age", y = "kdm", n = 250) %>%
+    group_by(sampleID) %>%
+    arrange(age, .by_group = TRUE) %>%
+    mutate(
+      xend = lead(age),
+      yend = lead(kdm),
+      dens_seg = (dens + lead(dens)) / 2
+    ) %>%
+    ungroup() %>%
+    filter(!is.na(xend), !is.na(yend), !is.na(dens_seg))
+
+  kdm_plot <- kdm_plot +
+    # tiny observation dots first
+    geom_point(
+      data = spaghetti_df,
+      aes(x = age, y = kdm),
+      alpha = 0.50,
+      size = 0.10,
+      show.legend = FALSE
+    ) +
+    # density-colored spaghetti segments
+    geom_segment(
+      data = spag_d,
+      aes(x = age, y = kdm, xend = xend, yend = yend, color = dens_seg),
+      linewidth = 0.3,
+      alpha = 0.30,
+      lineend = "round",
+      show.legend = FALSE
+    ) +
+    guides(color = "none")
+}
+
+# Add rotated CI rectangles, lines, and slope labels
+kdm_plot <- kdm_plot +
+  geom_polygon(
+    data = polygon_df,
+    aes(x = x, y = y, group = group),
+    fill = "darkred", alpha = 0.3
+  ) +
+  geom_segment(
+    data = plot_data,
+    aes(x = x0, xend = x1, y = y0, yend = y1),
+    color = "darkred", size = 1
+  ) +
+  ggtext::geom_richtext(
+    data = plot_data,
+    aes(x = label_x, y = label_y, label = label),
+    size = 3,
+    fontface = "bold",
+    color = "black",
+    fill = alpha("white", 0.4),
+    label.color = NA,
+    vjust = -2,
+    hjust = 0.6
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  coord_fixed(ratio = 1, xlim = c(15, 85), ylim = c(15, 100)) +
+  scale_x_continuous(breaks = seq(10, 85, by = 10)) +
+  scale_y_continuous(breaks = seq(10, 100, by = 10)) +
+  labs(x = "Chronological Age", y = "KDM") +
+  theme_minimal()
+
+print(kdm_plot)
+
+```
+```{r}
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/trajectory_all_kdm_v4_spag_Lukas.png", 
+    width = 6, height = 6, units = 'in', res = 1000)
+print(kdm_plot)  # Send plot to file
+dev.off()  # Close device
+```
+
+# 3.0 Statistical sex differences in trajectories
+
+## 3.1 PhenoAge
+```{r}
+# Load packages
+library(dplyr)
+library(sandwich)
+library(stringr)
+
+# -----------------------------
+# 1. Prepare data
+# -----------------------------
+to1po2_clean <- results_dt %>%
+  filter(!is.na(age), !is.na(phenoage), !is.na(gender)) %>%
+  group_by(sampleID) %>%
+  filter(n() >= 3) %>%
+  ungroup() %>%
+  mutate(
+    age_bin = cut(
+      age,
+      breaks = seq(17, ceiling(max(age, na.rm = TRUE)), by = 5),
+      include.lowest = TRUE,
+      right = FALSE
+    ),
+    gender = factor(gender, levels = c(1, 2), labels = c("Men", "Women"))
+  )
+
+# -----------------------------
+# 2. Fit joint model
+# -----------------------------
+fit <- lm(phenoage ~ age * age_bin * gender, data = to1po2_clean)
+
+# Cluster-robust covariance matrix
+vc <- vcovCL(fit, cluster = to1po2_clean$sampleID)
+
+# Coefficients
+coefs <- coef(fit)
+
+# Optional: inspect coefficient names if debugging
+# print(names(coefs))
+
+# -----------------------------
+# 3. Compute slopes and sex differences by age bin
+# -----------------------------
+z <- 1.96
+bins <- levels(to1po2_clean$age_bin)
+
+out <- data.frame(
+  age_bin = bins,
+  slope_men = NA_real_,
+  slope_women = NA_real_,
+  diff_women_minus_men = NA_real_,
+  lower_CI = NA_real_,
+  upper_CI = NA_real_,
+  p_value = NA_real_
+)
+
+for (i in seq_along(bins)) {
+  
+  bin <- bins[i]
+  
+  # Term names
+  term_age_bin <- paste0("age:age_bin", bin)
+  term_gender  <- "age:genderWomen"
+  term_three   <- paste0("age:age_bin", bin, ":genderWomen")
+  
+  # Base age slope
+  beta_age <- coefs["age"]
+  
+  # Age-bin slope deviation (0 for reference bin)
+  beta_bin <- if (term_age_bin %in% names(coefs)) coefs[term_age_bin] else 0
+  
+  # Women vs men slope difference in reference bin
+  beta_gender <- if (term_gender %in% names(coefs)) coefs[term_gender] else 0
+  
+  # Additional women vs men slope difference in this bin
+  beta_three <- if (term_three %in% names(coefs)) coefs[term_three] else 0
+  
+  # Slopes
+  slope_men <- beta_age + beta_bin
+  slope_women <- beta_age + beta_bin + beta_gender + beta_three
+  
+  # Difference: women - men
+  diff <- beta_gender + beta_three
+  
+  # Variance of difference
+  if (term_three %in% rownames(vc)) {
+    var_diff <- vc[term_gender, term_gender] +
+      vc[term_three, term_three] +
+      2 * vc[term_gender, term_three]
+  } else {
+    var_diff <- vc[term_gender, term_gender]
+  }
+  
+  se_diff <- sqrt(var_diff)
+  lower <- diff - z * se_diff
+  upper <- diff + z * se_diff
+  p <- 2 * pnorm(-abs(diff / se_diff))
+  
+  out[i, ] <- list(
+    bin,
+    slope_men,
+    slope_women,
+    diff,
+    lower,
+    upper,
+    p
+  )
+}
+
+# -----------------------------
+# 4. Clean supplement table
+# -----------------------------
+supp_table <- out %>%
+  mutate(
+    age_bin = gsub("\\[|\\)", "", age_bin),
+    age_bin = gsub(",", "-", age_bin),
+    slope_men = round(slope_men, 4),
+    slope_women = round(slope_women, 4),
+    diff_women_minus_men = round(diff_women_minus_men, 4),
+    lower_CI = round(lower_CI, 4),
+    upper_CI = round(upper_CI, 4),
+    p_value = ifelse(p_value < 0.001, "<0.001", sprintf("%.3f", p_value))
+  )
+
+sex_difference_trajectories_phe <- supp_table %>%
+  dplyr::rename(
+    `Age interval` = age_bin,
+    `Slope men` = slope_men,
+    `Slope women` = slope_women,
+    `Difference (women - men)` = diff_women_minus_men,
+    `Lower CI` = lower_CI,
+    `Upper CI` = upper_CI,
+    `P-value` = p_value
+  )
+
+print(sex_difference_trajectories_phe)
+```
+```{r}
+write.table(as.data.frame(sex_difference_trajectories_phe),
+            file = "sex_difference_trajectories_phe.csv",
+            sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1") 
+```
+
+## 3.2 KDM
+```{r}
+# Load packages
+library(dplyr)
+library(sandwich)
+library(stringr)
+
+# -----------------------------
+# 1. Prepare data
+# -----------------------------
+to1po2_clean <- results_dt %>%
+  filter(!is.na(age), !is.na(kdm), !is.na(gender)) %>%
+  group_by(sampleID) %>%
+  filter(n() >= 3) %>%
+  ungroup() %>%
+  mutate(
+    age_bin = cut(
+      age,
+      breaks = seq(17, ceiling(max(age, na.rm = TRUE)), by = 5),
+      include.lowest = TRUE,
+      right = FALSE
+    ),
+    gender = factor(gender, levels = c(1, 2), labels = c("Men", "Women"))
+  )
+
+# -----------------------------
+# 2. Fit joint model
+# -----------------------------
+fit <- lm(kdm ~ age * age_bin * gender, data = to1po2_clean)
+
+# Cluster-robust covariance matrix
+vc <- vcovCL(fit, cluster = to1po2_clean$sampleID)
+
+# Coefficients
+coefs <- coef(fit)
+
+# Optional: inspect coefficient names if debugging
+# print(names(coefs))
+
+# -----------------------------
+# 3. Compute slopes and sex differences by age bin
+# -----------------------------
+z <- 1.96
+bins <- levels(to1po2_clean$age_bin)
+
+out <- data.frame(
+  age_bin = bins,
+  slope_men = NA_real_,
+  slope_women = NA_real_,
+  diff_women_minus_men = NA_real_,
+  lower_CI = NA_real_,
+  upper_CI = NA_real_,
+  p_value = NA_real_
+)
+
+for (i in seq_along(bins)) {
+  
+  bin <- bins[i]
+  
+  # Term names
+  term_age_bin <- paste0("age:age_bin", bin)
+  term_gender  <- "age:genderWomen"
+  term_three   <- paste0("age:age_bin", bin, ":genderWomen")
+  
+  # Base age slope
+  beta_age <- coefs["age"]
+  
+  # Age-bin slope deviation (0 for reference bin)
+  beta_bin <- if (term_age_bin %in% names(coefs)) coefs[term_age_bin] else 0
+  
+  # Women vs men slope difference in reference bin
+  beta_gender <- if (term_gender %in% names(coefs)) coefs[term_gender] else 0
+  
+  # Additional women vs men slope difference in this bin
+  beta_three <- if (term_three %in% names(coefs)) coefs[term_three] else 0
+  
+  # Slopes
+  slope_men <- beta_age + beta_bin
+  slope_women <- beta_age + beta_bin + beta_gender + beta_three
+  
+  # Difference: women - men
+  diff <- beta_gender + beta_three
+  
+  # Variance of difference
+  if (term_three %in% rownames(vc)) {
+    var_diff <- vc[term_gender, term_gender] +
+      vc[term_three, term_three] +
+      2 * vc[term_gender, term_three]
+  } else {
+    var_diff <- vc[term_gender, term_gender]
+  }
+  
+  se_diff <- sqrt(var_diff)
+  lower <- diff - z * se_diff
+  upper <- diff + z * se_diff
+  p <- 2 * pnorm(-abs(diff / se_diff))
+  
+  out[i, ] <- list(
+    bin,
+    slope_men,
+    slope_women,
+    diff,
+    lower,
+    upper,
+    p
+  )
+}
+
+# -----------------------------
+# 4. Clean supplement table
+# -----------------------------
+supp_table <- out %>%
+  mutate(
+    age_bin = gsub("\\[|\\)", "", age_bin),
+    age_bin = gsub(",", "-", age_bin),
+    slope_men = round(slope_men, 4),
+    slope_women = round(slope_women, 4),
+    diff_women_minus_men = round(diff_women_minus_men, 4),
+    lower_CI = round(lower_CI, 4),
+    upper_CI = round(upper_CI, 4),
+    p_value = ifelse(p_value < 0.001, "<0.001", sprintf("%.3f", p_value))
+  )
+
+sex_difference_trajectories_kdm <- supp_table %>%
+  dplyr::rename(
+    `Age interval` = age_bin,
+    `Slope men` = slope_men,
+    `Slope women` = slope_women,
+    `Difference (women - men)` = diff_women_minus_men,
+    `Lower CI` = lower_CI,
+    `Upper CI` = upper_CI,
+    `P-value` = p_value
+  )
+
+print(sex_difference_trajectories_kdm)
+```
+
+```{r}
+write.table(as.data.frame(sex_difference_trajectories_kdm),
+            file = "sex_difference_trajectories_kdm.csv",
+            sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1") 
+```

@@ -1,0 +1,481 @@
+---
+title: "Trajectories_GAM_L"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-05-14
+---
+
+Input data: AMORIS (longitudinal) dvs results_dt från BA_rate_L.rmd
+
+# 1.0 Making figures
+
+## 1.1 Overview GAM curve and spagetti plot 
+```{r}
+library(ggplot2)
+library(mgcv)
+
+# Step 1: Filter full data for consistent plot scale
+clean_df <- subset(results_dt, age >= 17 & age <= 82)
+
+# Step 2: Subsample 5% of individuals for spaghetti plot
+set.seed(42)
+subset_ids <- sample(unique(clean_df$sampleID), floor(0.01 * length(unique(clean_df$sampleID))))
+spaghetti_data <- clean_df[clean_df$sampleID %in% subset_ids, ]
+
+# Step 3: Fit GAM model to full data
+gam_fit <- gam(kdm ~ s(age), data = clean_df)
+
+# Step 4: Predict values for smooth curve (200 evenly spaced age points)
+age_seq <- seq(17, 82, length.out = 200)
+pred_df <- data.frame(age = age_seq)
+preds <- predict(gam_fit, newdata = pred_df, se.fit = TRUE)
+
+pred_df$fit   <- preds$fit
+pred_df$upper <- preds$fit + 2 * preds$se.fit
+pred_df$lower <- preds$fit - 2 * preds$se.fit
+
+# Step 5: Plot
+p <- ggplot() +
+  # Tiny dots for observations
+  geom_point(data = spaghetti_data, aes(x = age, y = kdm, color = sampleID),
+             size = 0.1, alpha = 0.5, show.legend = FALSE) +
+  # Spaghetti lines per sampleID
+  geom_line(data = spaghetti_data, aes(x = age, y = kdm, group = sampleID),
+            color = "#0072B2", alpha = 0.3) +
+  # GAM confidence ribbon
+  geom_ribbon(data = pred_df, aes(x = age, ymin = lower, ymax = upper),
+              fill = "darkred", alpha = 0.4) +
+  # GAM fitted line
+  geom_line(data = pred_df, aes(x = age, y = fit),
+            color = "darkred", size = 1) +
+  scale_x_continuous(breaks = seq(10, 80, by = 10), limits = c(17, 82)) +
+  scale_y_continuous(breaks = seq(10, 100, by = 10), limits = c(17, 100)) +
+  coord_fixed(ratio = 1) +
+  labs(x = "Chronological Age", y = "KDM") +
+  theme_bw()
+
+print(p)
+```
+
+```{r}
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/spagetti_kdm_gam1_17_82_1perc.png", 
+    width = 4, height = 6, units = 'in', res = 1000)
+print(p)  # Send plot to file
+dev.off()  # Close device
+```
+
+## 1.2 Confidence interval table
+```{r}
+# 5-year landmark ages (for chronological age)
+# Among individuals aged ~X years, what is the estimated mean KDM (± CI) according to the GAM?
+landmarks <- seq(20, 80, by = 5)   # or seq(17, 82, by = 5)
+
+landmark_df <- data.frame(age = landmarks)
+
+pr <- predict(gam_fit, newdata = landmark_df, se.fit = TRUE)
+
+landmark_df$fit   <- pr$fit
+landmark_df$lower <- pr$fit - 2 * pr$se.fit
+landmark_df$upper <- pr$fit + 2 * pr$se.fit
+
+# pretty printing
+landmark_df$fit   <- round(landmark_df$fit,   2)
+landmark_df$lower <- round(landmark_df$lower, 2)
+landmark_df$upper <- round(landmark_df$upper, 2)
+
+print(landmark_df, row.names = FALSE)
+```
+```{r}
+write.csv(landmark_df,
+          file = file.path(getwd(), "GAM_ci_per5year.csv"),
+          row.names = FALSE)
+```
+
+## 1.3 Random subsets for the spagetti plots
+```{r}
+# Packages
+library(ggplot2)
+library(mgcv)
+library(gridExtra)
+
+## ---------- 0) Setup & cleaning ----------
+age_col <- if ("prov_age" %in% names(results_dt)) "prov_age" else "age"
+
+keep <- !is.na(results_dt[[age_col]]) & !is.na(results_dt$kdm) &
+        results_dt[[age_col]] >= 17 & results_dt[[age_col]] <= 82
+clean_df <- results_dt[keep, , drop = FALSE]
+
+uids_all <- unique(clean_df$sampleID)
+P_all    <- length(uids_all)
+
+used_ids <- if (exists("subset_ids")) unique(subset_ids) else uids_all[0]
+uids_avail <- setdiff(uids_all, used_ids)
+P_avail    <- length(uids_avail)
+
+## ---------- 1) Fit GAM ----------
+form   <- as.formula(paste0("kdm ~ s(", age_col, ")"))
+gam_fit <- mgcv::gam(form, data = clean_df)
+
+age_seq <- seq(17, 82, length.out = 200)
+pred_df <- setNames(data.frame(age_seq), age_col)
+preds   <- predict(gam_fit, newdata = pred_df, se.fit = TRUE)
+pred_df$fit   <- preds$fit
+pred_df$upper <- preds$fit + 2 * preds$se.fit
+pred_df$lower <- preds$fit - 2 * preds$se.fit
+
+## ---------- 2) 10 disjoint chunks ----------
+n_panels    <- 10L
+chunk_size  <- max(1L, floor(0.01 * P_all))
+if (n_panels * chunk_size > P_avail) {
+  chunk_size <- max(1L, floor(P_avail / n_panels))
+}
+
+set.seed(42)
+uids_shuffled <- sample(uids_avail, P_avail, replace = FALSE)
+take_n   <- min(length(uids_shuffled), n_panels * chunk_size)
+uids_used <- if (take_n > 0) uids_shuffled[seq_len(take_n)] else uids_shuffled[0]
+chunks <- split(uids_used, rep(seq_len(n_panels), each = chunk_size, length.out = length(uids_used)))
+
+## ---------- 3) Plot function (bigger panels, smaller text, fixed blue) ----------
+make_spaghetti_plot <- function(ids) {
+  d <- clean_df[clean_df$sampleID %in% ids, , drop = FALSE]
+  ggplot(data = d, aes_string(x = age_col, y = "kdm")) +
+    geom_point(size = 0.005, alpha = 0.5, color = "steelblue") +
+    geom_line(aes(group = sampleID), alpha = 0.3, color = "steelblue") +
+    geom_ribbon(data = pred_df, aes_string(x = age_col, ymin = "lower", ymax = "upper"),
+                inherit.aes = FALSE, fill = "darkred", alpha = 0.35) +
+    geom_line(data = pred_df, aes_string(x = age_col, y = "fit"),
+              inherit.aes = FALSE, color = "darkred", linewidth = 0.6) +
+    scale_x_continuous(breaks = seq(20, 80, by = 10), limits = c(17, 82)) +
+    scale_y_continuous(breaks = seq(10, 100, by = 10), limits = c(17, 100)) +
+    coord_fixed(ratio = 1) +
+    labs(x = "Chronological Age", y = "KDM") +
+    theme_bw(base_size = 9) +  # smaller text
+    theme(
+      axis.title = element_text(size = 9),
+      axis.text  = element_text(size = 7),
+      plot.title = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+}
+#main settings
+#    geom_point(size = 0.2, alpha = 0.5, color = "steelblue") +
+#    geom_line(aes(group = sampleID), alpha = 0.3, color = "steelblue") +
+
+#2
+#    geom_point(size = 0.1, alpha = 0.5, color = "steelblue") +
+#    geom_line(aes(group = sampleID), alpha = 0.3, color = "steelblue") +
+
+#3
+#geom_point(size = 0.05, alpha = 0.5, color = "steelblue") +
+
+#4
+#geom_point(size = 0.02, alpha = 0.5, color = "steelblue") +
+
+#5
+#geom_point(size = 0.005, alpha = 0.5, color = "steelblue") +
+
+
+## ---------- 4) Arrange ----------
+plots <- lapply(seq_len(n_panels), function(i) make_spaghetti_plot(chunks[[i]]))
+grid  <- gridExtra::grid.arrange(grobs = plots, ncol = 2)
+
+## ---------- 5) Save (A4) ----------
+# Save as PNG in A4 format (portrait, 600 dpi)
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/kdmspag_10grids1percent_5.png",
+    width = 8.27, height = 11.69, units = "in", res = 600)
+
+gridExtra::grid.arrange(grobs = plots, ncol = 2)
+
+dev.off()
+
+```
+
+
+## 1.4 Additional libraries for density version of spagetti plots
+```{r}
+library(ggplot2)
+library(mgcv)     # you’re using gam()
+library(dplyr)
+library(MASS)     # kde2d
+library(fields)   # interp.surface
+```
+
+## 1.5: Single plot 2D KDE → color segments by local density
+```{r}
+# Step 1: Filter full data for consistent plot scale
+clean_df <- subset(results_dt, age >= 17 & age <= 82)
+
+# Step 2: Subsample 1% of individuals for spaghetti plot (your code uses 0.01)
+set.seed(42)
+subset_ids <- sample(unique(clean_df$sampleID),
+                     floor(0.01 * length(unique(clean_df$sampleID))))
+spaghetti_data <- clean_df[clean_df$sampleID %in% subset_ids, ]
+
+# Step 3: Fit GAM model to full data
+gam_fit <- gam(kdm ~ s(age), data = clean_df)
+
+# Step 4: Predict values for smooth curve (200 evenly spaced age points)
+age_seq <- seq(17, 82, length.out = 200)
+pred_df <- data.frame(age = age_seq)
+preds <- predict(gam_fit, newdata = pred_df, se.fit = TRUE)
+
+pred_df$fit   <- preds$fit
+pred_df$upper <- preds$fit + 2 * preds$se.fit
+pred_df$lower <- preds$fit - 2 * preds$se.fit
+
+# ---- Strategy 1: 2D KDE + color segments by local density ----
+add_kde_density <- function(df, x = "age", y = "kdm", n = 250) {
+  xx <- df[[x]]
+  yy <- df[[y]]
+  kde <- MASS::kde2d(xx, yy, n = n)
+
+  surf <- list(x = kde$x, y = kde$y, z = kde$z)
+  df$dens <- fields::interp.surface(surf, cbind(xx, yy))
+  df
+}
+
+spag_d <- spaghetti_data %>%
+  add_kde_density(x = "age", y = "kdm", n = 250) %>%
+  group_by(sampleID) %>%
+  mutate(
+    xend = lead(age),
+    yend = lead(kdm),
+    dens_seg = (dens + lead(dens)) / 2
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(xend), !is.na(yend), !is.na(dens_seg))
+
+# Step 5: Plot (spaghetti FIRST, red ribbon/line LAST)
+p <- ggplot() +
+  # Points first (as in your original style)
+  geom_point(
+    data = spaghetti_data,
+    aes(x = age, y = kdm),
+    size = 0.1, alpha = 0.5,
+    show.legend = FALSE
+  ) +
+  # Spaghetti segments colored by density
+  geom_segment(
+    data = spag_d,
+    aes(x = age, y = kdm, xend = xend, yend = yend, color = dens_seg),
+    linewidth = 0.25,
+    alpha = 0.7,
+    lineend = "round"
+  ) +
+  # REMOVE the density legend (label at the side)
+  guides(color = "none") +
+  # GAM confidence ribbon (on top)
+  geom_ribbon(
+    data = pred_df,
+    aes(x = age, ymin = lower, ymax = upper),
+    inherit.aes = FALSE,
+    fill = "darkred",
+    alpha = 0.4
+  ) +
+  # GAM fitted line (last, on top)
+  geom_line(
+    data = pred_df,
+    aes(x = age, y = fit),
+    inherit.aes = FALSE,
+    color = "darkred",
+    size = 1
+  ) +
+  scale_x_continuous(breaks = seq(10, 80, by = 10), limits = c(17, 82)) +
+  scale_y_continuous(breaks = seq(10, 100, by = 10), limits = c(17, 100)) +
+  coord_fixed(ratio = 1) +
+  labs(x = "Chronological Age", y = "KDM") +
+  theme_bw()
+
+print(p)
+```
+
+```{r}
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/spagetti_kdm_gam1_17_82_1perc_density.png", 
+    width = 4, height = 6, units = 'in', res = 1000)
+print(p)  # Send plot to file
+dev.off()  # Close device
+```
+
+## 1.6 Random subsets for the spagetti plots with density shading
+```{r}
+# Packages
+library(ggplot2)
+library(mgcv)
+library(gridExtra)
+library(dplyr)
+library(MASS)
+library(fields)
+
+## ----------- 0) Setup & cleaning -----------
+age_col <- if ("prov_age" %in% names(results_dt)) "prov_age" else "age"
+
+keep <- !is.na(results_dt[[age_col]]) &
+  !is.na(results_dt$kdm) &
+  results_dt[[age_col]] >= 17 &
+  results_dt[[age_col]] <= 82
+
+clean_df <- results_dt[keep, , drop = FALSE]
+
+uids_all <- unique(clean_df$sampleID)
+P_all <- length(uids_all)
+
+used_ids <- if (exists("subset_ids")) unique(subset_ids) else uids_all[0]
+uids_avail <- setdiff(uids_all, used_ids)
+P_avail <- length(uids_avail)
+
+## ----------- 1) Fit GAM on full cleaned data -----------
+form <- as.formula(paste0("kdm ~ s(", age_col, ")"))
+gam_fit <- mgcv::gam(form, data = clean_df)
+
+age_seq <- seq(17, 82, length.out = 200)
+pred_df <- setNames(data.frame(age_seq), age_col)
+preds <- predict(gam_fit, newdata = pred_df, se.fit = TRUE)
+
+pred_df$fit   <- preds$fit
+pred_df$upper <- preds$fit + 2 * preds$se.fit
+pred_df$lower <- preds$fit - 2 * preds$se.fit
+
+## ----------- 2) Create 10 disjoint ID groups explicitly -----------
+n_panels <- 10L
+chunk_size <- max(1L, floor(0.01 * P_all))
+
+# if too few available IDs, shrink chunk size
+if (n_panels * chunk_size > P_avail) {
+  chunk_size <- max(1L, floor(P_avail / n_panels))
+}
+
+set.seed(42)
+uids_shuffled <- sample(uids_avail, length(uids_avail), replace = FALSE)
+
+panel_ids <- vector("list", n_panels)
+
+for (i in seq_len(n_panels)) {
+  start_idx <- (i - 1L) * chunk_size + 1L
+  end_idx   <- min(i * chunk_size, length(uids_shuffled))
+  
+  if (start_idx <= length(uids_shuffled) && start_idx <= end_idx) {
+    panel_ids[[i]] <- uids_shuffled[start_idx:end_idx]
+  } else {
+    panel_ids[[i]] <- character(0)
+  }
+}
+
+## ----------- 3) Helper: density for segment colouring -----------
+add_kde_density <- function(df, x, y, n = 250) {
+  xx <- df[[x]]
+  yy <- df[[y]]
+  
+  out <- df
+  out$dens <- NA_real_
+  
+  ok <- is.finite(xx) & is.finite(yy)
+  xx_ok <- xx[ok]
+  yy_ok <- yy[ok]
+  
+  if (length(xx_ok) < 2 || length(unique(xx_ok)) < 2 || length(unique(yy_ok)) < 2) {
+    return(out)
+  }
+  
+  kde <- MASS::kde2d(xx_ok, yy_ok, n = n)
+  surf <- list(x = kde$x, y = kde$y, z = kde$z)
+  out$dens[ok] <- fields::interp.surface(surf, cbind(xx_ok, yy_ok))
+  
+  out
+}
+
+## ----------- 4) Plot function -----------
+make_spaghetti_plot <- function(ids) {
+  
+  d <- clean_df[clean_df$sampleID %in% ids, , drop = FALSE]
+  
+  if (nrow(d) == 0) {
+    return(
+      ggplot() +
+        theme_void()
+    )
+  }
+  
+  d <- d[order(d$sampleID, d[[age_col]]), , drop = FALSE]
+  d <- add_kde_density(d, x = age_col, y = "kdm", n = 250)
+  
+  spag_d <- d %>%
+    group_by(sampleID) %>%
+    mutate(
+      xend = lead(.data[[age_col]]),
+      yend = lead(kdm),
+      dens_seg = (dens + lead(dens)) / 2
+    ) %>%
+    ungroup() %>%
+    filter(!is.na(xend), !is.na(yend), !is.na(dens_seg))
+  
+  ggplot() +
+    geom_point(
+      data = d,
+      aes_string(x = age_col, y = "kdm"),
+      size = 0.005,
+      alpha = 0.5,
+      show.legend = FALSE
+    ) +
+    geom_segment(
+      data = spag_d,
+      aes_string(
+        x = age_col, y = "kdm",
+        xend = "xend", yend = "yend",
+        color = "dens_seg"
+      ),
+      linewidth = 0.25,
+      alpha = 0.7,
+      lineend = "round",
+      show.legend = FALSE
+    ) +
+    guides(color = "none") +
+    geom_ribbon(
+      data = pred_df,
+      aes_string(x = age_col, ymin = "lower", ymax = "upper"),
+      inherit.aes = FALSE,
+      fill = "darkred",
+      alpha = 0.35
+    ) +
+    geom_line(
+      data = pred_df,
+      aes_string(x = age_col, y = "fit"),
+      inherit.aes = FALSE,
+      color = "darkred",
+      linewidth = 0.6
+    ) +
+    scale_x_continuous(breaks = seq(20, 80, by = 10), limits = c(17, 82)) +
+    scale_y_continuous(breaks = seq(10, 100, by = 10), limits = c(17, 100)) +
+    coord_fixed(ratio = 1) +
+    labs(x = "Chronological Age", y = "KDM") +
+    theme_bw(base_size = 9) +
+    theme(
+      axis.title = element_text(size = 9),
+      axis.text = element_text(size = 7),
+      plot.title = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+}
+
+## ----------- 5) Build all 10 plots -----------
+plots <- lapply(seq_len(n_panels), function(i) make_spaghetti_plot(chunks[[i]]))
+
+g <- gridExtra::arrangeGrob(grobs = plots, ncol = 2)
+
+# show in RStudio / notebook
+grid::grid.newpage()
+grid::grid.draw(g)
+
+## ----------- 5) Save (A4) -----------
+png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Longitudinal/kdmspag_10groups_density_NEeW.png",
+  width = 8.27, height = 11.69, units = "in", res = 600
+)
+
+
+grid::grid.newpage()
+grid::grid.draw(g)
+
+invisible(dev.off())
+```
