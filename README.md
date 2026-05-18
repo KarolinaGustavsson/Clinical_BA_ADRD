@@ -50,12 +50,12 @@ Clinical_BA_ADRD/
 ### Step 1: Baseline Analysis (Baseline folder)
 Start with `Calculating_BA_B.Rmd` to set up the cohort, calculate biological ages, and generate outputs needed for the longitudinal analysis.
 
-**See [Baseline/Readme_B](Baseline/README.md) for detailed instructions.**
+**See [Baseline/Readme_B](Baseline/Readme_B) for detailed instructions.**
 
 ### Step 2: Longitudinal Analysis (Longitudinal folder)
 The longitudinal scripts use outputs from the baseline analysis.
 
-**See [Longitudinal/Readme_L](Longitudinal/README.md) for detailed instructions.**
+**See [Longitudinal/Readme_L](Longitudinal/Readme_L) for detailed instructions.**
 
 ## Data Requirements
 
