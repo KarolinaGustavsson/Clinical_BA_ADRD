@@ -1,1 +1,143 @@
-# Clinical_BA_ADRD baseline
+# Baseline Analysis: Biological Age and ADRD Risk
+
+## Overview
+
+This folder contains scripts for **baseline (cross-sectional) analysis** of the association between biological age and risk of Alzheimer's disease and related dementias (ADRD) in 261,383 AMORIS individuals.
+
+## Workflow
+
+Execute scripts in the following order:
+
+### 1. **Selecting_biomarkers_B.Rmd** - Choosing biomarkers
+**Purpose:** Selecting biomarkers through correlation with chronological age
+
+**Key Steps:**
+- Calculate correlation between each biomarker and chronological age
+- Create density plots showing biomarker distributions
+- Identify biomarkers with correlation > 0.1 (separated by sex)
+
+**Key Outputs:**
+- Correlation summary tables
+
+---
+
+### 2. **Calculating_BA_B.Rmd** - Main Analysis Script
+**Purpose:** Set up the cohort, calculate biological ages, and prepare data for Cox regression
+
+**Key Steps:**
+- Load AMORIS baseline cohort 
+- Define 12 biomarkers and remove outliers (±5 SD)
+- Create training/test split 
+- Apply Klemera-Doubál Method (KDM) and PhenoAge 
+- Generate standardized age gap
+- Create merged dataset with KDM and PhenoAge results
+
+**Key Outputs:**
+- `to1po2` - Final dataset with biological age and ADRD outcomes 
+- `bioage_scale_df_table.csv` - Scaling parameters for bioages
+
+---
+
+### 3. **CoxPH_B.Rmd** - Main Survival Analysis
+**Purpose:** Cox proportional hazards regression for baseline biological age gap with ADRD as outcome
+
+**Key Steps:**
+- Load data from `Calculating_BA_B.Rmd`
+- Link SveDem (Swedish Dementia Registry) for ADRD diagnoses
+- Fit Cox models for **subtypes:**
+  - ADRD (any dementia)
+  - Alzheimer's disease
+  - Vascular dementia
+  - Other dementias
+- **For each outcome:**
+  - Sex-adjusted model
+  - Multivariable model (adjusted for age, sex, education, income)
+- Extract hazard ratios (HR), confidence intervals, p-values
+- Test proportional hazards assumption
+
+**Key Outputs:**
+- `combined_results_ADRD_main.csv` - HRs for all outcomes and models
+
+---
+
+### 4. **CoxPH_subgroups_B.Rmd** - Stratified Survival Analysis
+**Purpose:** Examine hazard ratios, stratified by age groups and sex
+
+**Key Steps:**
+- **Age stratification:** Median chronological age split (45)
+  - Younger group (< median age)
+  - Older group (≥ median age)
+- **Sex stratification:** Men vs. Women
+- Repeat Cox models within each stratum
+
+**Key Outputs:**
+- `combined_df_agegroup_45_main.csv` - Age-stratified results
+- `combined_df_sex_main.csv` - Sex-stratified results
+
+---
+
+### 5. **Tabel1_B.rmd** - Descriptive Characteristics
+**Purpose:** Generate Table 1 with baseline cohort characteristics stratified by biological age
+
+**Key Steps:**
+- Load data from `CoxPH_B.Rmd` (requires `to1po2` object)
+- Generate descriptive statistics (mean ± SD for continuous, N (%) for categorical)
+- Calculate p-values for group comparisons
+- Generate follow-up time characteristics based on ADRD diagnosis
+
+**Key Outputs:**
+- `table_kdm_agegap_stratified_two_p.csv` - Main Table 1
+- `followuptime_ADRD_b_p.csv` - Follow-up time characteristics
+- HTML table displays for review
+
+
+---
+
+## Data & Variables
+
+### Input Data
+- **AMORIS:** Baseline cohort data with linkages to relevant registers except SveDem 
+- **SveDem:** SveDem dementia registry linkage 
+
+### Selected Biomarkers (12)
+1. S_Alb - Serum albumin
+2. S_Krea - Serum creatinine
+3. TC - Total cholesterol
+4. TG - Triglycerides
+5. S_K - Serum potassium
+6. S_Urea - Serum urea
+7. S_LD - Serum LD (lactate dehydrogenase)
+8. S_Ca - Serum calcium
+9. S_Urat - Serum uric acid
+10. S_FAMN - Serum FAMN
+11. S_Hapt - Serum haptoglobin
+12. fS_Gluk - Fasting serum glucose
+
+### Key Variables Created
+- `kdm` - Klemera-Doubál biological age (years)
+- `phenoage` - PhenoAge (years)
+- `kdm_advance_sd` - KDM bioage advance (years, standardized)
+- `phenoage_advance_sd` - PhenoAge advance (years, standardized)
+- `ADRD`, `Alzheimers`, `Vascular`, `Other` - Dementia outcomes (0/1)
+
+---
+
+## Important Notes
+
+1. **Data Access:** Scripts require access to Swedish AMORIS and SveDem data. Modify data paths as needed.
+
+2. **Fasting Status:** Optional sensitivity analysis available in `Calculating_BA_B.Rmd` (line 1.4) to restrict to fasting individuals.
+
+3. **Output for Longitudinal Analysis:**
+   - The `Longitudinal/` folder scripts depend on:
+     - `sampleIDs_baseline.csv` - IDs for longitudinal follow-up
+     - `training_set_baseline.csv` - Training set for bioage algorithms
+   - Ensure these files are saved and accessible
+
+4. **Proportional Hazards Assumption:** Violations are tested using `cox.zph()`.
+
+5. **File Encoding:** Output CSVs use Latin1 encoding with semicolon delimiters.
+
+---
+
+**Last updated:** May 2026
