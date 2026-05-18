@@ -2,7 +2,7 @@
 
 ## Overview
 
-This folder contains scripts for **longitudinal analysis** of 44,866 AMORIS participants with repeated biomarker measurements over 26 years of follow-up. The analysis examines whether **baseline biological age** and **rate of change in bioage** independently predict dementia risk.
+This folder contains scripts for **longitudinal analysis** of 44,866 AMORIS participants with repeated biomarker measurements over 26 years of follow-up. The analysis examines whether **baseline biological age** and **rate of change in biological age** independently predict dementia risk.
 
 ## Prerequisites
 
@@ -14,19 +14,19 @@ Before running longitudinal scripts, complete the **Baseline analysis**.
 
 Execute scripts in the following order:
 
-### 1. **Calculating_BA_L.rmd** - Longitudinal Bioage Calculation
+### 1. **Calculating_BA_L.rmd** - Longitudinal Biological Age Calculation
 **Purpose:** Calculate biological ages for all repeated measurements using baseline training set
 
 **Key Steps:**
 - Load full AMORIS longitudinal cohort with all measurements
 - Restrict to sampleIDs from baseline analysis (for consistency)
 - Use **same training set as baseline** for KDM and PhenoAge algorithms
-- Apply bioage algorithms to each measurement
+- Apply BioAge algorithms to each measurement
 - Merge with baseline data
 - Retain individuals with ≥3 measurements for trajectory analysis
 
 **Key Outputs:**
-- `to1po2` - Longitudinal dataset with all measurements and calculated bioages
+- `to1po2` - Longitudinal dataset with all measurements and calculated biological ages
 - Prepared for downstream trajectory and rate-of-change analyses
 
 ---
@@ -46,7 +46,7 @@ Execute scripts in the following order:
 
 **Key Outputs:**
 - `table_kdm_longitud_summary_part1_p.csv` - Measurement frequency statistics
-- `table_kdm_longitud_baseline_summary_part2_p.csv` - Baseline characteristics by bioage group
+- `table_kdm_longitud_baseline_summary_part2_p.csv` - Baseline characteristics 
 - `followuptime_byADRD_l.csv` - Follow-up characteristics by ADRD status
 
 ---
@@ -64,8 +64,7 @@ Execute scripts in the following order:
 
 **Part 2: Trajectory Slope Calculation**
 - For each individual: fit linear regression of biological age vs. chronological age
-- Extract slope (rate of change in years of bioage per year of chronological age)
-- Standardize slopes by sex and bioage group
+- Extract slope (rate of change in standardized years of biological age per year of chronological age)
 
 **Part 3: Survival Analysis**
 - Fit Cox models with ADRD as outcome
@@ -77,7 +76,7 @@ Execute scripts in the following order:
 ---
 
 ### 4. **Trajectories_binned_L.Rmd** - Trajectory Analysis with 5-Year Age Bins
-**Purpose:** Visualize bioage trajectories across the lifespan and test for sex differences
+**Purpose:** Visualize biological age trajectories across the lifespan and test for sex differences
 
 **Key Steps:**
 
@@ -111,7 +110,7 @@ Execute scripts in the following order:
 **Purpose:** Fit smooth nonparametric trajectories using Generalized Additive Models
 
 **Key Steps:**
-- Apply Generalized Additive Models (GAM) to bioage trajectories
+- Apply Generalized Additive Models (GAM) to biological age trajectories
 - Fit smooth spline: KDM (or PhenoAge) ~ s(chronological age)
 - Generate predictions across age range with 95% CI
 - Create spaghetti plots with GAM smooth overlay
@@ -119,7 +118,7 @@ Execute scripts in the following order:
 - Add kernel density estimate shading to show data density
 
 **Key Outputs:**
-- `GAM_ci_per5year.csv` - Predicted bioages with CI at landmark ages
+- `GAM_ci_per5year.csv` - Predicted biological ages with CI at landmark ages
 - PNG figures with spaghetti plots + GAM smooth + density shading:
   - `kdmspag_10grids1percent.png`
   - `kdmspag_10groups_density_NEW.png`
@@ -134,7 +133,7 @@ Execute scripts in the following order:
 
 ### Key Derived Variables
 - **Baseline assessment:**
-  - `kdm_advance_sd`, `phenoage_advance_sd` (standardized bioage difference)
+  - `kdm_advance_sd`, `phenoage_advance_sd` (standardized biological age difference)
 
 - **Rate of change:**
   - `kdm_slope` - KDM change per year of chronological age
@@ -149,13 +148,11 @@ Execute scripts in the following order:
 
 1. **Longitudinal Design:** Only individuals with ≥3 measurements are included in rate-of-change analyses (to ensure reliable slope estimates)
 
-2. **Training Set Consistency:** Uses the **same bioage training set as baseline analysis** to ensure comparability
+2. **Multiple Measurements per Individual:** Scripts correctly handle repeated measurements (person-time structure for survival analysis)
 
-3. **Multiple Measurements per Individual:** Scripts correctly handle repeated measurements (person-time structure for survival analysis)
+3. **Fasting Status:** Optional subgroup analyses available (restrict to health checkups: `debiteringskod %in% c("H")`)
 
-4. **Fasting Status:** Optional subgroup analyses available (restrict to health checkups: `debiteringskod %in% c("H")`)
-
-5. **Output Format:** CSVs use semicolon delimiters and Latin1 encoding for Swedish system compatibility
+4. **Output Format:** CSVs use semicolon delimiters and Latin1 encoding for Swedish system compatibility
 
 ---
 
