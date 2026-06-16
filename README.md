@@ -17,7 +17,7 @@ Alzheimer's Disease and Related Dementia (ADRD) diagnoses tracked through Swedis
 - Other dementias
 
 ### Biological Age Assessment
-- **Method:** Klemera-Doubál Method (KDM) and PhenoAge algorithms
+- **Method:** Klemera-Doubal Method (KDM) and PhenoAge algorithms
 - **Biomarkers (12):** S_Alb, S_Krea, TC, TG, S_K, S_Urea, S_LD, S_Ca, S_Urat, S_FAMN, S_Hapt, fS_Gluk
 - **Key metrics:** 
   - Biological age (years)
