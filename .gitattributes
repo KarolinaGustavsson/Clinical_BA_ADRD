@@ -1,0 +1,7 @@
+# Normalise line endings in the repository. The analyses were developed partly
+# on Windows and partly on macOS, so without this the same file can arrive with
+# either ending and whole files show up as changed in a diff.
+* text=auto eol=lf
+
+# Windows drivers keep CRLF on checkout.
+*.ps1 text eol=crlf

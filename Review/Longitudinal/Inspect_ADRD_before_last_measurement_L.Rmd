@@ -1,0 +1,82 @@
+---
+title: "Where ADRD diagnoses fall relative to the measurement occasions"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-09-09
+---
+
+Input data: `results_dt` from `Calculating_BA_L.Rmd` (one row per measurement
+occasion), restricted to individuals with an ADRD diagnosis.
+
+Reviewer point: immortal person-time in the longitudinal cohort. Inclusion
+previously required only that an individual was free of ADRD at the *first*
+measurement, which leaves people who were diagnosed before contributing three
+measurements. This notebook counts where the diagnosis falls -- at the first,
+a middle, or the last measurement occasion -- which is what the revised
+inclusion rule needed before it could be applied.
+
+The counts this notebook prints are the basis for the revised inclusion
+criteria stated in the Methods, under which 61 of 44,866 individuals are
+excluded for having fewer than three pre-diagnosis measurements, leaving
+44,805.
+
+The rule itself is applied in `Longitudinal/BA_rate_L.Rmd`; this notebook only
+describes the data it was derived from.
+
+# 1.0 Position of the diagnosis within each individual's measurement series
+```{r}
+analysis_df <- results_dt %>%
+  filter(ADRD == 1) %>%
+  arrange(sampleID, age) %>%      # make sure rows are in chronological order per person
+  group_by(sampleID) %>%
+  mutate(
+    row_num = row_number(),
+    total_rows = n(),
+    adrd_age = first(AgeAtLastDate),
+    next_age = lead(age),
+    valid_adrd_row = adrd_age >= age & (is.na(next_age) | adrd_age <= next_age)
+  ) %>%
+  summarise(
+    num_rows = first(total_rows),
+    adrd_age = first(adrd_age),
+    has_valid_adrd_row = any(valid_adrd_row),
+    adrd_at_first = any(valid_adrd_row & row_num == 1),
+    adrd_at_last = any(valid_adrd_row & row_num == total_rows),
+    adrd_in_middle = any(valid_adrd_row & row_num > 1 & row_num < total_rows),
+    .groups = 'drop'
+  )
+
+cat("People with valid ADRD row found:", sum(analysis_df$has_valid_adrd_row), "\n")
+cat("ADRD at first row:", sum(analysis_df$adrd_at_first), "\n")
+cat("ADRD in middle rows:", sum(analysis_df$adrd_in_middle), "\n")
+cat("ADRD at last row:", sum(analysis_df$adrd_at_last), "\n")
+cat("Missing/no valid row found:", sum(!analysis_df$has_valid_adrd_row), "\n")
+```
+
+```{r}
+# Get the sampleIDs in each category
+first_ids  <- analysis_df %>% filter(adrd_at_first)  %>% pull(sampleID)
+middle_ids <- analysis_df %>% filter(adrd_in_middle) %>% pull(sampleID)
+last_ids   <- analysis_df %>% filter(adrd_at_last)   %>% pull(sampleID)
+
+# Full records (all columns, all rows) for each group
+adrd_first_df  <- results_dt %>% filter(sampleID %in% first_ids)  %>% arrange(sampleID, age)
+adrd_middle_df <- results_dt %>% filter(sampleID %in% middle_ids) %>% arrange(sampleID, age)
+adrd_last_df   <- results_dt %>% filter(sampleID %in% last_ids)   %>% arrange(sampleID, age)
+
+# quick counts to sanity check against analysis_df
+cat("First-row ADRD people:", length(first_ids), "\n")
+cat("Middle-row ADRD people:", length(middle_ids), "\n")
+cat("Last-row ADRD people:", length(last_ids), "\n")
+
+# inspect a few
+View(adrd_first_df)
+View(adrd_middle_df)
+
+#First-row ADRD people: 25 (these are techniqually middle)
+#Middle-row ADRD people: 85 
+#Last-row ADRD people: 5515 
+
+# so 110/5515, 2%
+```
+

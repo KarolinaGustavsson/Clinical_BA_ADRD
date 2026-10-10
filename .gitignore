@@ -1,0 +1,50 @@
+# =============================================================================
+# Nothing derived from individual participants belongs in this repository.
+# =============================================================================
+# The AMORIS data are restricted (see README.md) and cannot be redistributed.
+# Only code and aggregate documentation are tracked here. The patterns below
+# are a safety net, not a substitute for checking what you are committing:
+# run `git status` and look at every file before you stage it.
+
+# --- Individual-level files produced by the pipeline -------------------------
+# One row per participant. Never commit these.
+table1_kdmgroups_baseline*.csv
+sampleIDs_baseline.csv
+training_set_baseline.csv
+*_perID.csv
+*_perid.csv
+
+# --- Output directory -------------------------------------------------------
+# Where config.R sends tables, intermediate files and figures.
+output/
+Output/
+
+# --- Source data and R workspaces -------------------------------------------
+# Workspaces can hold the full participant-level cohort.
+*.sas7bdat
+*.RData
+*.rdata
+*.rda
+*.rds
+*.RDS
+*.sav
+*.dta
+
+# --- Run artefacts ----------------------------------------------------------
+*.log
+*.Rout
+.Rhistory
+.RData
+.Rproj.user/
+*.nb.html
+*_cache/
+*_files/
+
+# --- OS / editor ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*~
+
+# --- Generated results documents ---------------------------------------------
+# plot_cif_results.R writes the estimates behind the figures into this file.
+README_cif_figures.md

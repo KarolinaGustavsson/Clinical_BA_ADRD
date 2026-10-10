@@ -1,0 +1,248 @@
+---
+title: "Fine-Gray competing risks: baseline dementia analysis (project 1)"
+output: html_notebook
+author: Karolina Gustavsson
+---
+
+Fine-Gray subdistribution hazard models for dementia, with death as the
+competing event and attained age as the timescale, mirroring the Cox models in
+`CoxPH_B.Rmd`.
+
+**This notebook is for inspecting and validating.** The full run is likely to
+exhaust memory inside RStudio - that is what happened for the cancer project.
+Run the real analysis from a terminal instead:
+
+```
+Rscript fg_project1_ADRD.R main
+Rscript fg_project1_ADRD.R svedem
+```
+
+Both resume from their CSV if they die partway, so restarting is safe.
+See `README_fg_project1_ADRD.md`.
+
+# 1.0 Setup
+
+```{r setup}
+source("fg_project1_ADRD.R")
+```
+
+# 2.0 Check the machinery before touching real data
+
+Runs the full synthetic test suite. Everything must pass before trusting any
+numbers below.
+
+```{r}
+# Use the Rscript belonging to the R session that is running this notebook.
+# On the Windows VDI, Rscript is not on the system PATH, so calling it by bare
+# name would fail here the same way it does in PowerShell.
+rscript <- file.path(R.home("bin"), "Rscript")
+test_output <- system2(rscript, "test_fg_project1_ADRD.R", stdout = TRUE, stderr = TRUE)
+cat(test_output, sep = "\n")
+```
+
+# 3.0 Load the prepared data
+
+Expects `cox_main_2025_06_06.RData` in this folder, containing `to1po2` and
+`to1po2_SveDem_D` as produced by `Calculating_BA_B.Rmd` -> `CoxPH_B.Rmd`.
+
+```{r}
+datasets       <- load_prepared_data()
+to1po2         <- datasets$to1po2
+to1po2_SveDem_D <- datasets$to1po2_SveDem_D
+rm(datasets); gc()
+```
+
+# 4.0 Inspect the event coding on real data
+
+Exit time and status come from four separate ages - `age_entry`,
+`age_dementia`, `age_death`, `age_censor` - on a first-event-wins basis.
+`age_dementia` reuses `AgeAtLastDate` unchanged, so dementia timing is
+identical to the Cox models; `age_death` is recovered from `DODSDATn`, which is
+the piece Cox never needed and `AgeAtLastDate` had overwritten.
+
+Competing events are death **and** other dementia subtypes, because the
+registers record only one dementia type per person. Run
+`Rscript fg_project1_ADRD.R inspect` first if you have not already.
+
+The counts below should satisfy
+`competing_deaths(subtype) = competing_deaths(ADRD) + (ADRD events - subtype events)`,
+and `censored` should be identical for every outcome. If not, the timeline is
+wrong somewhere.
+
+```{r}
+for (spec in main_specs) {
+  df <- clean_fg_data(to1po2, spec$event_var, "Main")
+  cat("\n---", spec$outcome_label, "---\n")
+  print(table(df$fg_status))
+  cat("N:", nrow(df), "\n")
+  cat("Entry age:", paste(round(range(df$AgeAtFirstDate), 1), collapse = " - "), "\n")
+  cat("Exit age :", paste(round(range(df$AgeAtLastDate), 1), collapse = " - "), "\n")
+  rm(df); gc()
+}
+```
+
+Sanity check against the Cox models: the Fine-Gray event count for each outcome
+should match `nevent` from the corresponding `coxph` fit in `CoxPH_B.Rmd`,
+allowing for the shared complete-case sample used here.
+
+```{r}
+comparison <- do.call(rbind, lapply(main_specs, function(spec) {
+  df <- clean_fg_data(to1po2, spec$event_var, "Main")
+  counts <- fg_counts(df)
+  cox_n <- sum(!is.na(to1po2[[spec$event_var]]) & to1po2[[spec$event_var]] == 1)
+  rm(df); gc()
+  data.frame(
+    outcome = spec$outcome_label,
+    fg_events = counts$events,
+    raw_events_in_data = cox_n,
+    dropped_to_missingness = cox_n - counts$events,
+    competing_deaths = counts$competing_deaths,
+    censored = counts$censored
+  )
+}))
+comparison
+```
+
+# 5.0 How large will the expansion be?
+
+The expansion is where the memory goes. Check it on the smallest outcome first
+to get a feel for the blow-up factor before committing to a full run.
+
+```{r}
+probe <- clean_fg_data(to1po2, "Vascular", "Main")
+probe_start <- Sys.time()
+probe_expanded <- expand_fg_data(probe)
+
+cat("Input rows   :", nrow(probe), "\n")
+cat("Expanded rows:", nrow(probe_expanded), "\n")
+cat("Blow-up      :", round(nrow(probe_expanded) / nrow(probe), 1), "x\n")
+cat("Elapsed      :", round(elapsed_min(probe_start), 2), "min\n")
+cat("Approx size  :", round(as.numeric(object.size(probe_expanded)) / 1e9, 2), "Gb\n")
+print(summary(probe_expanded$fgwt))
+```
+
+If that size is uncomfortable, the escape hatch is `fg_config$time_round_digits`
+(see section 8.0) - but try the exact run first.
+
+```{r}
+rm(probe, probe_expanded); gc()
+```
+
+# 6.0 Verify the one-expansion-per-outcome shortcut on real data
+
+Each outcome is expanded **once** and all four models (2 BA measures x 2
+adjustment sets) are fitted on that single expansion. This is valid only
+because `finegray()` weights depend on `(entry, exit, status, id)` and not on
+the covariates carried along. The test suite checks this on synthetic data;
+this confirms it on the real cohort.
+
+```{r}
+verify_expansion_invariance <- function(data, event_var, dataset_label) {
+  df <- clean_fg_data(data, event_var, dataset_label)
+  full    <- expand_fg_data(df)
+  minimal <- expand_fg_data(df, ba_measures = fg_config$ba_measures[1],
+                            covariates = "gender")
+  result <- c(
+    same_rows    = nrow(full) == nrow(minimal),
+    same_weights = isTRUE(all.equal(full$fgwt, minimal$fgwt)),
+    same_start   = isTRUE(all.equal(full$fgstart, minimal$fgstart)),
+    same_stop    = isTRUE(all.equal(full$fgstop, minimal$fgstop))
+  )
+  rm(df, full, minimal); gc()
+  result
+}
+
+verify_expansion_invariance(to1po2, "Vascular", "Main")
+```
+
+All four must be `TRUE`. If any is `FALSE`, stop and expand per model instead.
+
+# 7.0 Single-outcome trial run
+
+Run one outcome end to end to confirm timing and memory before launching
+everything. Results append to a scratch CSV.
+
+```{r}
+trial_file <- "finegray_project1_TRIAL.csv"
+
+run_outcome_block(
+  data          = to1po2,
+  specs         = main_specs,
+  dataset_label = "Main",
+  results_file  = trial_file,
+  only_outcomes = "Vascular"
+)
+
+read.table(trial_file, sep = ";", dec = ",", header = TRUE,
+           quote = "", fileEncoding = "Latin1")
+```
+
+Multiply the elapsed time by 4 (main) and 10 (SveDem) for a rough total.
+
+# 8.0 Memory escape hatch
+
+Only if the exact run cannot complete. Rounding the exit age collapses tied
+event times and shrinks the expansion. Report anything run this way as a
+sensitivity analysis, not as the primary result.
+
+```{r, eval=FALSE}
+# 3 ~ one day, 2 ~ four days, 1 ~ five weeks.
+fg_config$time_round_digits <- 2
+
+# Then compare against the exact result for one outcome to see how much
+# the estimates actually move before applying it everywhere.
+```
+
+# 9.0 Full run
+
+Prefer the terminal scripts. This chunk is `eval=FALSE` on purpose - running it
+inside RStudio is what ran out of memory last time.
+
+```{r, eval=FALSE}
+run_outcome_block(to1po2, main_specs, "Main", "finegray_project1_main.csv")
+run_outcome_block(to1po2_SveDem_D, svedem_specs, "SveDem", "finegray_project1_svedem.csv")
+```
+
+# 10.0 Collect results
+
+```{r}
+read_results <- function(file) {
+  if (!file.exists(file)) return(NULL)
+  read.table(file, sep = ";", dec = ",", header = TRUE, quote = "",
+             fileEncoding = "Latin1")
+}
+
+combined <- do.call(rbind, Filter(Negate(is.null), list(
+  read_results("finegray_project1_main.csv"),
+  read_results("finegray_project1_svedem.csv")
+)))
+
+if (!is.null(combined)) {
+  write.table(combined, "finegray_project1_combined.csv",
+              sep = ";", dec = ",", row.names = FALSE, quote = FALSE,
+              fileEncoding = "Latin1")
+}
+combined
+```
+
+# 11.0 What failed and what it cost
+
+```{r}
+if (!is.null(combined)) {
+  failed <- combined[!is.na(combined$error), ]
+  cat("Models attempted:", nrow(combined), "\n")
+  cat("Failed:", nrow(failed), "\n")
+  if (nrow(failed) > 0) print(failed[, c("dataset", "outcome", "model", "BA", "error")])
+
+  cat("\nModels using the non-robust fallback:",
+      sum(combined$robust %in% c(FALSE, "FALSE")), "\n")
+
+  cat("\nSlowest expansions:\n")
+  timing <- unique(combined[, c("dataset", "outcome", "fg_expanded_N",
+                                "expansion_elapsed_min")])
+  print(head(timing[order(-timing$expansion_elapsed_min), ], 10))
+
+  cat("\nTotal model time (min):", round(sum(combined$model_elapsed_min, na.rm = TRUE), 1), "\n")
+  cat("Total expansion time (min):", round(sum(timing$expansion_elapsed_min, na.rm = TRUE), 1), "\n")
+}
+```

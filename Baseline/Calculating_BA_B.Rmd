@@ -13,9 +13,24 @@ Important note: For KDM we need to train on a uniform distribution for chronolog
 
 ## 1.1 Loading packages
 ```{r}
-options(repos = "http://nexus.ki.se/repository/cran.r-project.org")
-.libPaths("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/shun_trial/lib")
-source("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/shun_trial/function.R")
+# Paths, output locations and analysis parameters all come from config.R.
+# It also applies the optional project library and CRAN mirror used on a
+# platform without outbound internet access (see section 7 there).
+source(here::here("config.R"))
+
+# Biological age is computed with the BioAge package (Kwon & Belsky,
+# GeroScience 2021), installed from GitHub:
+#
+#     remotes::install_github("dayoonkwon/BioAge")
+#
+# Earlier versions of this script instead sourced a local helper file holding
+# a copy of the BioAge functions, as a way of making the package available
+# inside the secure analysis environment, which has no CRAN or GitHub access.
+# That file was never part of this repository and made the script impossible
+# to run elsewhere. It has been removed in favour of the published package;
+# for an offline platform, transfer the source tarball and install it with
+# install.packages(..., repos = NULL, type = "source"). See DEPENDENCIES.md.
+library(BioAge)
 
 library(haven)
 library(broom)
@@ -32,7 +47,7 @@ library(ggplot2)
 
 ## 1.2 Optional: Determine size of NHANES3 training set in the BioAge package
 ```{r}
-load("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/BioAge-master/BioAge/data/NHANES3.rda")
+data("NHANES3", package = "BioAge")
 
 NH3bm <- c("albumin","alp","lncrp","totchol","lncreat","hba1c","sbp","bun","uap","lymph","mcv","wbc")
 
@@ -62,7 +77,7 @@ num_rows #9869 were in the original training set
 
 ## 1.3 Load AMORIS
 ```{r}
-amoris <- read_sas("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/Data_ADRD/StudyPop.sas7bdat")
+amoris <- read_sas(PATH_STUDYPOP)
 ```
 
 ## 1.4 Optional: for sensitivity analysis of fasting
@@ -244,6 +259,51 @@ biomarkers = c("S_Alb", "S_Krea", "TC", "TG", "S_K", "S_Urea", "S_LD", "S_Ca", "
 AMORIS <- AMORIS[complete.cases(AMORIS[, biomarkers]), ]
 ```
 
+Sensitivity check of calendar time, we are doing another sens for the review question related to this, we dont need this
+```{r}
+AMORIS$cal_year <- as.numeric(format(AMORIS$Provtagningsdatum, "%Y"))
+#AMORIS$gender_f <- factor(AMORIS$gender)
+```
+```{r}
+drift_diagnostic <- do.call(rbind, lapply(biomarkers, function(bm) {
+  fit <- lm(as.formula(paste(bm, "~ ns(age_w, df = 3) * gender")), data = AMORIS)
+  data.frame(biomarker = bm, cal_year = AMORIS$cal_year, resid = residuals(fit))
+}))
+
+drift_summary <- drift_diagnostic %>%
+  group_by(biomarker, cal_year) %>%
+  summarise(mean_resid = mean(resid), se = sd(resid) / sqrt(n()), .groups = "drop")
+
+ggplot(drift_summary, aes(cal_year, mean_resid)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = mean_resid - 1.96 * se, ymax = mean_resid + 1.96 * se)) +
+  facet_wrap(~ biomarker, scales = "free_y") +
+  labs(x = "Calendar year of blood draw", y = "Mean residual (age- and sex-adjusted, 95% CI)",
+       title = "Assay drift check: age/sex-adjusted biomarker residuals by calendar year")
+```
+```{r}
+drift_check_after <- do.call(rbind, lapply(biomarkers, function(bm) {
+  fit <- lm(as.formula(paste(bm, "~ ns(age_w, df = 3) * gender_f")), data = AMORIS)
+  data.frame(biomarker = bm, cal_year = AMORIS$cal_year, resid = residuals(fit))
+}))
+
+drift_summary_after <- drift_check_after %>%
+  group_by(biomarker, cal_year) %>%
+  summarise(mean_resid = mean(resid), se = sd(resid) / sqrt(n()), .groups = "drop")
+
+ggplot(drift_summary_after, aes(cal_year, mean_resid)) +
+  geom_line() +
+  geom_pointrange(aes(ymin = mean_resid - 1.96 * se, ymax = mean_resid + 1.96 * se)) +
+  facet_wrap(~ biomarker, scales = "free_y") +
+  labs(x = "Calendar year of blood draw", y = "Mean residual (age- and sex-adjusted, 95% CI)",
+       title = "Post-correction check: residuals by calendar year")
+```
+```{r}
+fit <- lm(as.formula(paste(bm, "~ ns(age_w, df = 3) * gender_f")), data = AMORIS,
+          model = FALSE, x = FALSE, y = FALSE, qr = TRUE)
+```
+
+
 ## 1.13 Making our test and training set
 ```{r}
 # Load necessary libraries
@@ -326,7 +386,7 @@ b_train_set
 ```
 
 ```{r}
-png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/2025-06-06/b_train_set.png", 
+png(fig_path("b_train_set.png"), 
     width = 6, height = 4, units = 'in', res = 600)
 print(b_train_set)  # Send plot to file
 dev.off()  # Close device
@@ -355,7 +415,7 @@ a_test_set
 ```
 
 ```{r}
-png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/2025-06-06/a_test_set_pinkblue.png", 
+png(fig_path("a_test_set_pinkblue.png"), 
     width = 6, height = 4, units = 'in', res = 600)
 print(a_test_set)  # Send plot to file
 dev.off()  # Close device
@@ -431,7 +491,7 @@ to1po2 = left_join(new_test_set, to1po2_kdm[, c("sampleID", "kdm", "kdm_advance"
 ```
 
 ```{r}
-png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/2025-06-06/c_modified_kdm_phe_KDMnotKDMage.png", 
+png(fig_path("c_modified_kdm_phe_KDMnotKDMage.png"), 
     width = 8, height = 4, units = 'in', res = 600)
 print(c_modified_kdm_phe)  # Send plot to file
 dev.off()  # Close device
@@ -463,7 +523,7 @@ print(bioage_scale_df)
 ```
 
 ```{r}
-write.table(as.data.frame(bioage_scale_df), "bioage_scale_df_table.csv", sep = ";",
+write.table(as.data.frame(bioage_scale_df), PATH_BIOAGE_SCALE, sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -476,7 +536,7 @@ get_axis_type <- function(labels){
   return(rep("float", length(labels)) %>% setNames(names(labels))) # Create function to generate axis_type variables for BAA plots
 }
 
-png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/2025-06-06/d_corrplot_good_F.png", 
+png(fig_path("d_corrplot_good_F.png"), 
     width = 6, height = 4.5, units = 'in', res = 600)
 
 plot_baa(data=to1po2,
@@ -495,7 +555,7 @@ plot_baa(data=to1po2,
 ## 2.7 Saving the sampleIDs for reference (for the longitudinal version)
 ```{r}
 write.table(as.data.frame(to1po2$sampleID),
-            "sampleIDs_baseline.csv",
+            PATH_SAMPLE_IDS,
             sep = ";",
             dec = ",",
             row.names = FALSE,
@@ -505,7 +565,7 @@ write.table(as.data.frame(to1po2$sampleID),
 
 ## 2.8 Saving the training set (for the longitudinal version)
 ```{r}
-write.table(as.data.frame(new_training_set), "training_set_baseline.csv", sep = ";",
+write.table(as.data.frame(new_training_set), PATH_TRAINING_SET, sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -594,7 +654,7 @@ grid.arrange(
 
 ```{r}
 # Open device BEFORE running grid.arrange
-png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/2025-06-06/Density_ba_sex_wCA.png",
+png(fig_path("Density_ba_sex_wCA.png"),
     width = 3, height = 5, units = "in", res = 600) #with only phe and kdm width = 8, height = 4, units = "in"
 
 # Draw the combined plot (e.g., two-panel)
