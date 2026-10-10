@@ -79,11 +79,22 @@ error in the package. It is the only difference in the package's R source
 between the two commits; `kdm_calc()` is unaffected, so the KDM results — the
 primary measure throughout the manuscript — are identical under either version.
 
-The change shifts absolute PhenoAge by roughly 1.5 years and rescales it by
-about 1.6%. The exposure used in the models is the **standardised PhenoAge age
-gap**, which is insensitive to a shift and largely insensitive to a rescaling,
-so the reported hazard ratios per standard deviation are not materially
-affected; absolute PhenoAge values are.
+PhenoAge is an affine function of the mortality score whose slope is `1/c`, so
+changing `c` rescales `phenoage - 141.50225` by a factor of
+`0.09165 / 0.090165 = 1.0165`. Three consequences, in decreasing certainty:
+
+- **KDM is identical.** `kdm_calc()` is untouched, so every KDM result — the
+  primary measure throughout the manuscript — is the same under either commit.
+- **Absolute PhenoAge differs**, by roughly 1.5 years at typical values, and
+  any quantity proportional to the PhenoAge scale differs by about 1.6%. That
+  includes the PhenoAge trajectory slopes, which are a derivative of an affine
+  map and so scale by the same 1.0165.
+- **The standardised PhenoAge age gap**, which is the exposure in the survival
+  models, is close to invariant: the shift cancels when the gap is centred and
+  the rescaling is largely absorbed by dividing by the standard deviation. It
+  is not exactly invariant, because chronological age enters the gap separately
+  from the rescaled PhenoAge, so the hazard ratios per standard deviation are
+  expected to change only slightly rather than not at all.
 
 ### A note on the earlier `function.R`
 
