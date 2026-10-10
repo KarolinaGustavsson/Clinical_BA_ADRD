@@ -11,6 +11,10 @@ Input data: AMORIS, load it in step 1.2 in Calculating_BA.rmd. Then further down
 
 ## 1.1 Loading libraries
 ```{r}
+# Paths, output locations and analysis parameters come from config.R in the
+# repository root. Nothing below hardcodes a location.
+source(here::here("config.R"))
+
 library(gridExtra)
 library(ggplot2)
 ```
@@ -49,7 +53,7 @@ combined_plot <- do.call(grid.arrange, c(biomarker_plots, ncol = 4))
 
 ```{r}
 # Open device BEFORE running grid.arrange
-png("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/PhD_studies/Study_1/Script/Current_version/Baseline/2025-06-06/Density_adjust3.png",
+png(fig_path("Density_adjust3.png"),
     width = 10, height = 8, units = "in", res = 600)
 
 gridExtra::grid.arrange(grobs = biomarker_plots, ncol = 4)
@@ -92,7 +96,7 @@ print(correlation_df_sorted)
 ```
 
 ```{r}
-write.table(as.data.frame(correlation_df_sorted), "raw_ADRDamoris_all_bm.csv", sep = ";",
+write.table(as.data.frame(correlation_df_sorted), out_path("raw_ADRDamoris_all_bm.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -154,7 +158,7 @@ print(correlation_df_women_sorted)
 ```
 
 ```{r}
-write.table(as.data.frame(correlation_df_men_sorted), "raw_ADRDamoris_all_bm_men.csv", sep = ";",
+write.table(as.data.frame(correlation_df_men_sorted), out_path("raw_ADRDamoris_all_bm_men.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -162,7 +166,7 @@ write.table(as.data.frame(correlation_df_men_sorted), "raw_ADRDamoris_all_bm_men
 ```
 
 ```{r}
-write.table(as.data.frame(correlation_df_women_sorted), "raw_ADRDamoris_all_bm_wom.csv", sep = ";",
+write.table(as.data.frame(correlation_df_women_sorted), out_path("raw_ADRDamoris_all_bm_wom.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -196,7 +200,7 @@ print(correlation_df_sorted)
 ```
 
 ```{r}
-write.table(as.data.frame(correlation_df_sorted), "ADRDamoris_all_bm.csv", sep = ";",
+write.table(as.data.frame(correlation_df_sorted), out_path("ADRDamoris_all_bm.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -258,7 +262,7 @@ print(correlation_df_women_sorted)
 ```
 
 ```{r}
-write.table(as.data.frame(correlation_df_men_sorted), "ADRDamoris_all_bm_men.csv", sep = ";",
+write.table(as.data.frame(correlation_df_men_sorted), out_path("ADRDamoris_all_bm_men.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -266,9 +270,121 @@ write.table(as.data.frame(correlation_df_men_sorted), "ADRDamoris_all_bm_men.csv
 ```
 
 ```{r}
-write.table(as.data.frame(correlation_df_women_sorted), "ADRDamoris_all_bm_wom.csv", sep = ";",
+write.table(as.data.frame(correlation_df_women_sorted), out_path("ADRDamoris_all_bm_wom.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
             fileEncoding = "Latin1")
 ```
+
+## To prevent data leakage, selecting biomarkers in the training set: new_training_set
+```{r}
+biomarkers <- c("S_Alb", "S_Krea", "TC", "TG", "S_K", "S_P", "Fe_maet", "S_Urea", "S_LD", "S_Ca", "fS_TIBC", "fS_Jaern", "S_Alp", "S_Urat", "S_FAMN", "S_Hapt", "fS_Gluk")
+
+colnames(new_training_set)[colnames(new_training_set) == "Alder"] <- "age"
+```
+
+```{r}
+correlations_spearman <- cor(new_training_set$age, new_training_set[, biomarkers], method = "spearman", use = "complete.obs")
+correlations_pearson <- cor(new_training_set$age, new_training_set[, biomarkers], method = "pearson", use = "complete.obs")
+
+#print(correlations_spearman)
+#print(correlations_pearson)
+```
+
+```{r}
+# Convert to data frame for easier sorting and display
+correlation_df <- data.frame(
+  Biomarker = colnames(new_training_set[, biomarkers]),
+  Spearman = as.vector(correlations_spearman),
+  Pearson = as.vector(correlations_pearson)
+)
+
+# Sort by the absolute value of Spearman correlations (descending order)
+correlation_df_sorted <- correlation_df[order(abs(correlation_df$Spearman), decreasing = TRUE), ]
+
+# Print the sorted correlations
+print(correlation_df_sorted)
+
+#B_EPK_R, S_CRP, B_LPK_V, S_Ca, Fe_maet, fS_Jaern <0.1 for both pearson and spearman
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_sorted), out_path("bm_all_new_training_set.csv"), sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+```{r}
+# Filter data based on the 'Kon' column
+c_amoris_men <- new_training_set[new_training_set$gender == 1, ]
+c_amoris_women <- new_training_set[new_training_set$gender == 2, ]
+
+
+## check pearson correlation
+# Calculate Pearson correlations between Age and biomarkers
+correlations_pearson_m <- cor(c_amoris_men$age, c_amoris_men[, biomarkers], method = "pearson", use = "complete.obs")
+correlations_spearman_m <- cor(c_amoris_men$age, c_amoris_men[, biomarkers], method = "spearman", use = "complete.obs")
+correlations_pearson_f <- cor(c_amoris_women$age, c_amoris_women[, biomarkers], method = "pearson", use = "complete.obs")
+correlations_spearman_f <- cor(c_amoris_women$age, c_amoris_women[, biomarkers], method = "spearman", use = "complete.obs")
+#print("correlations_pearson_m:")
+#print(correlations_pearson_m)#
+#print("correlations_spearman_m:")
+#print(correlations_spearman_m)#
+#print("correlations_pearson_f:")
+#print(correlations_pearson_f)#
+#print("correlations_spearman_f:")
+#print(correlations_spearman_f)#
+```
+
+```{r}
+# For men: create a data frame for both Pearson and Spearman correlations
+correlation_df_men <- data.frame(
+  Biomarker = colnames(c_amoris_men[, biomarkers]),
+  Pearson = as.vector(correlations_pearson_m),
+  Spearman = as.vector(correlations_spearman_m)
+)
+
+# Sort by absolute Spearman correlation values for men
+correlation_df_men_sorted <- correlation_df_men[order(abs(correlation_df_men$Spearman), decreasing = TRUE), ]
+
+# For women: create a data frame for both Pearson and Spearman correlations
+correlation_df_women <- data.frame(
+  Biomarker = colnames(c_amoris_women[, biomarkers]),
+  Pearson = as.vector(correlations_pearson_f),
+  Spearman = as.vector(correlations_spearman_f)
+)
+
+# Sort by absolute Spearman correlation values for women
+correlation_df_women_sorted <- correlation_df_women[order(abs(correlation_df_women$Spearman), decreasing = TRUE), ]
+
+# Print the sorted correlations for men and women
+print("Sorted Correlations for Men:")
+print(correlation_df_men_sorted) #S_CRP, fS_TIBC, fS_Jaern, Fe_maet, S_Alp <0.1 S
+
+print("Sorted Correlations for Women:") #S_Ca, Lymfocy, S_P, Fe_maet, S_CRP, B_EPK_R, B_LPK_V, fS_Jaern <0.1 s
+print(correlation_df_women_sorted)
+
+#compared with all: B_EPK_R, S_CRP, B_LPK_V, S_Ca, Fe_maet, fS_Jaern 
+#in all, men and women: S_CRP, fS_Jaern, Fe_maet are all bad biomarkers for BA
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_men_sorted), out_path("bm_all_new_training_set_men.csv"), sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+```{r}
+write.table(as.data.frame(correlation_df_women_sorted), out_path("bm_all_new_training_set_wom.csv"), sep = ";",
+            dec = ",",
+            row.names = FALSE,
+            quote = FALSE,
+            fileEncoding = "Latin1")
+```
+
+

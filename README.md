@@ -1,80 +1,200 @@
 # Longitudinal Biological Aging and Risk of Dementia in a Large Prospective Swedish Cohort
 
-## Overview
+R code for the analyses in the manuscript. The analysis examines both
+**baseline biological age** and the **rate of change in biological age** as
+exposures for Alzheimer's disease and related dementias (ADRD) in the AMORIS
+cohort.
 
-This repository contains R scripts for analyzing the association between biological age and risk of Alzheimer's disease and related dementias (ADRD) in the AMORIS cohort. The analysis examines both **baseline bioage** and **rate of change in bioage** as exposures.
-
-## Study Design
-
-### Population
-- **Baseline cohort (cross-sectional):** 261,383 AMORIS participants with complete biomarker data
-- **Longitudinal cohort:** 44,866 individuals with repeated biomarker measurements over 26 years of follow-up
-
-### Outcome
-Alzheimer's Disease and Related Dementia (ADRD) diagnoses tracked through Swedish national health registers, categorized into:
-- Alzheimer's disease (AD)
-- Vascular dementia
-- Other dementias
-
-### Biological Age Assessment
-- **Method:** Klemera-Doubal Method (KDM) and PhenoAge algorithms
-- **Biomarkers (12):** S_Alb, S_Krea, TC, TG, S_K, S_Urea, S_LD, S_Ca, S_Urat, S_FAMN, S_Hapt, fS_Gluk
-- **Key metrics:** 
-  - Biological age (years)
-  - Bioage advance (difference from chronological age, standardized)
-
-## Repository Structure
-
-```
-Clinical_BA_ADRD/
-├── README.md                          # This file
-├── Baseline/                          # Cross-sectional baseline analysis
-│   ├── README.md                      # Baseline analysis guide
-│   ├── Calculating_BA_B.Rmd           # Main bioage calculation script
-│   ├── Selecting_biomarkers_B.Rmd     # Biomarker validation
-│   ├── Tabel1_B.rmd                   # Baseline Table 1
-│   ├── CoxPH_B.Rmd                    # Main Cox PH analysis
-│   └── CoxPH_subgroups_B.Rmd          # Stratified survival analysis
-│
-└── Longitudinal/                      # Repeated measurements analysis
-    ├── README.md                      # Longitudinal analysis guide
-    ├── Calculating_BA_L.rmd           # Bioage calculation for repeated measurements
-    ├── Table1_L.rmd                   # Longitudinal cohort characteristics
-    ├── BA_rate_L.rmd                  # Rate of change analysis
-    ├── Trajectories_binned__L.Rmd     # Trajectory visualization (5-year bins)
-    └── Trajectories_GAM_L.rmd         # Trajectory modeling with GAM
-```
-
-## Workflow
-
-### Step 1: Baseline Analysis (Baseline folder)
-Start with `Calculating_BA_B.Rmd` to set up the cohort, calculate biological ages, and generate outputs needed for the longitudinal analysis.
-
-**See [Baseline/Readme_B](Baseline/Readme_B) for detailed instructions.**
-
-### Step 2: Longitudinal Analysis (Longitudinal folder)
-The longitudinal scripts use outputs from the baseline analysis.
-
-**See [Longitudinal/Readme_L](Longitudinal/Readme_L) for detailed instructions.**
-
-## Data Requirements
-
-The scripts require access to the AMORIS data along with Swedish registers.
-
-## Contact
-
-Karolina Gustavsson  
-Department of Medical Epidemiology and Biostatistics  
-Karolinska Institute
-
-## Citation
-
-This repository accompanies an unpublished study. If you use the code or materials, please cite:
-
-Gustavsson K, Sjölander A, Mostafaei S, Mak JKL, Religa D, Käll L, Modig K, Hägg S. *Longitudinal biological aging and risk of dementia in a large prospective Swedish cohort*. Manuscript in preparation, 2026.
-
-A formal citation will be added once the manuscript is available as a preprint or publication.
+The underlying data are restricted and cannot be redistributed, so the pipeline
+cannot be executed from this repository alone. It is documented in enough
+detail to be read and assessed without running it, and to be run by a
+researcher who holds an approved AMORIS extract — see
+[DATA_DICTIONARY.md](DATA_DICTIONARY.md).
 
 ---
 
-**Last updated:** May 2026
+## Study design
+
+**Population.** 261,383 AMORIS participants with complete biomarker data at
+baseline. Of these, 44,805 individuals with three or more pre-diagnosis
+biomarker measurements form the repeated-measures subsample, contributing
+194,897 measurement occasions.
+
+**Follow-up.** 26 years, through Swedish national health registers, to
+31 December 2020.
+
+**Outcome.** ADRD, ascertained from the National Patient Register,
+anti-dementia drug dispensations and SveDem (the Swedish registry for
+cognitive/dementia disorders), and classified as Alzheimer's disease, vascular
+dementia or other dementia. A subtype analysis is restricted to clinically
+adjudicated SveDem cases.
+
+**Exposure.** Biological age from the Klemera–Doubal Method (KDM, primary) and
+PhenoAge (secondary), computed from 12 clinical biomarkers with the
+[BioAge](https://github.com/dayoonkwon/BioAge) package. The exposure in the
+survival models is the **age gap** — biological minus chronological age —
+standardised, where one standard deviation of the KDM age gap corresponds to
+6.5 years. Biomarkers are not equally weighted; the fitted weights are in
+Supplementary Table 12 and in [DATA_DICTIONARY.md](DATA_DICTIONARY.md) §4.6.
+
+---
+
+## Getting started
+
+**1. Install the dependencies.** See [DEPENDENCIES.md](DEPENDENCIES.md).
+Biological age estimation needs the `BioAge` package, which is not on CRAN:
+
+```r
+remotes::install_github("dayoonkwon/BioAge")
+```
+
+**2. Point the code at your data.** Set one environment variable — for example
+in `~/.Renviron`:
+
+```sh
+AMORIS_DATA_ROOT=/path/to/amoris
+```
+
+or edit `DATA_ROOT` at the top of [config.R](config.R). That is the only
+location any script needs. Then check the inputs are reachable before starting
+a long run:
+
+```r
+source("config.R")
+check_config()
+```
+
+Outputs go to `./output` by default; set `STUDY1_OUTPUT_DIR` to send them
+elsewhere.
+
+**3. Run the scripts in order.** See the workflow below, and
+[DATA_DICTIONARY.md](DATA_DICTIONARY.md) for the full execution order, the
+variable definitions, and the files passed between steps.
+
+**4. Record your environment.** After the pipeline completes:
+
+```r
+source("write_session_info.R")
+```
+
+---
+
+## Repository structure
+
+```
+Clinical_BA_ADRD/
+├── README.md                          # this file
+├── config.R                           # paths and analysis parameters — edit this
+├── DEPENDENCIES.md                    # packages and versions
+├── DATA_DICTIONARY.md                 # variables, data flow, run order
+├── write_session_info.R               # records software versions
+├── .gitignore                         # keeps participant-level files out of git
+│
+├── Baseline/                          # cross-sectional baseline analysis
+│   ├── README.md
+│   ├── Selecting_biomarkers_B.Rmd     # biomarker screening
+│   ├── Calculating_BA_B.Rmd           # cohort setup, KDM + PhenoAge calibration
+│   ├── CoxPH_B.Rmd                    # outcome definitions, main Cox models
+│   ├── CoxPH_SveDem_censored_B.Rmd    # adjudicated SveDem subanalysis
+│   ├── CoxPH_subgroups_B.Rmd          # age- and sex-stratified models
+│   ├── Table1_B.Rmd                   # Table 1, biological age groups
+│   └── Fine_Gray/                     # competing risks (Supp. Table 9)
+│
+├── Longitudinal/                      # repeated-measures analysis
+│   ├── README.md
+│   ├── Calculating_BA_L.Rmd           # biological age at every measurement
+│   ├── Table1_L.Rmd                   # repeated-measures descriptives
+│   ├── BA_rate_L.Rmd                  # intercept vs. rate of change
+│   ├── Trajectories_binned_L.Rmd      # 5-year age-bin trajectories
+│   └── Trajectories_GAM_L.Rmd         # smooth trajectories
+│
+└── Review/                            # analyses cited in the response to
+    ├── README.md                      #   reviewers only, not in the paper
+    ├── Baseline/Cumulative_incidence/  # absolute risk, competing events
+    └── Longitudinal/                  # calendar-year adjustment, inclusion checks
+```
+
+---
+
+## Workflow
+
+### Step 1 — Baseline
+
+Start with `Selecting_biomarkers_B.Rmd`, then `Calculating_BA_B.Rmd` to build
+the cohort, calibrate KDM and PhenoAge, and write the sample and training-set
+files the longitudinal analysis depends on. `CoxPH_B.Rmd` then defines the
+outcomes and covariates that everything downstream uses.
+
+See [Baseline/README.md](Baseline/README.md).
+
+### Step 2 — Longitudinal
+
+The longitudinal scripts read `sampleIDs_baseline.csv` and
+`training_set_baseline.csv` from step 1. **The training set must be reused, not
+regenerated** — biological age is calibrated on it, so a new training set puts
+the two sets of biological ages on different scales.
+
+See [Longitudinal/README.md](Longitudinal/README.md).
+
+### Step 3 — Review analyses (optional)
+
+Analyses run in response to peer review and cited in the response to
+reviewers, which produce no figure or table in the manuscript or supplementary
+information. See [Review/README.md](Review/README.md).
+
+---
+
+## Two things to know before modifying anything
+
+**Analytic grain.** Some objects hold one row per *individual* and others one
+row per *measurement occasion*, and the two are joined repeatedly. Any model
+whose exposure is a person-level summary — a trajectory intercept or slope —
+must be fitted on person-level rows, or participants with more measurements are
+counted more than once. [DATA_DICTIONARY.md](DATA_DICTIONARY.md) §7 sets out
+which object is which; it is worth reading before touching `BA_rate_L.Rmd`.
+
+**Calibration order.** KDM and PhenoAge coefficients are estimated once, in
+`Calculating_BA_B.Rmd`, and applied everywhere else. Scripts are not
+independent of each other.
+
+---
+
+## Data availability
+
+The scripts require the AMORIS cohort data with linkage to Swedish national
+health registers.
+
+**These data cannot be redistributed.** AMORIS is governed by Swedish law on
+health data, and access is granted by the cohort's data access committee
+subject to ethical review. Researchers wishing to reproduce these analyses
+should contact the AMORIS study group; the cohort profile
+([Walldius et al., *Int J Epidemiol* 2017;46:1103](https://doi.org/10.1093/ije/dyw333))
+describes the application process.
+
+Nothing derived from individual participants is included in this repository.
+`.gitignore` excludes the source extracts, R workspaces, the output directory
+and the individual-level intermediate files by name; see
+[DATA_DICTIONARY.md](DATA_DICTIONARY.md) §5 for which intermediate files are
+individual-level and which are aggregate.
+
+The analyses were approved by the Swedish Ethical Review Authority
+(2022-06634-01).
+
+---
+
+## Contact
+
+Karolina Gustavsson
+Department of Medical Epidemiology and Biostatistics
+Karolinska Institutet
+
+## Citation
+
+This repository accompanies a manuscript under review. If you use the code or
+materials, please cite:
+
+Gustavsson K, Sjölander A, Mostafaei S, Mak JKL, Religa D, Käll L, Modig K,
+Hägg S. *Longitudinal biological aging and risk of dementia in a large
+prospective Swedish cohort*. Manuscript under review, 2026.
+
+A formal citation will be added on publication.

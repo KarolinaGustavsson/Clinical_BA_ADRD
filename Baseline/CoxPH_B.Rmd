@@ -12,7 +12,11 @@ Covariates: sex, education level, income quartiles
 
 ## 1.1 Linking SveDem 
 ```{r}
-SveDem <- read_sas("W:/C6_AmorisGuest/Sara Hagg/Karolina Gustavsson/Data_ADRD/SveDem.sas7bdat")
+# Paths, output locations and analysis parameters come from config.R in the
+# repository root. Nothing below hardcodes a location.
+source(here::here("config.R"))
+
+SveDem <- read_sas(PATH_SVEDEM)
 ```
 
 ```{r}
@@ -82,6 +86,39 @@ to1po2$Other <- ifelse(
 # Adds the people with no dementia diagnosis but ATC code to alzheimers, the people with dementia drugs have alzheimers
 to1po2$Alzheimers <- ifelse(to1po2$ATC != "" & to1po2$Dementia == "" & to1po2$S_ADRD == "", 1, to1po2$Alzheimers)
 ```
+
+NEW 
+```{r}
+cat("nrow before subtype chunk:", nrow(to1po2), "\n")
+cat("sum ADRD before subtype chunk:", sum(to1po2$ADRD, na.rm=TRUE), "\n")
+
+to1po2$subtype <- with(to1po2, ifelse(
+  S_l_alz==1 | S_e_alz==1 | S_alz_vas==1, "Alzheimers",
+  ifelse(S_vas==1, "Vascular",
+  ifelse(S_oth==1 | S_uns==1 | S_par==1 | S_fro==1 | S_lew==1, "Other",
+  ifelse(Dementia %in% alzheimers_codes, "Alzheimers",
+  ifelse(Dementia %in% vascular_codes, "Vascular",
+  ifelse(Dementia %in% other_codes, "Other",
+  ifelse(ATC != "" & Dementia == "" & S_ADRD == 0, "Alzheimers", NA))))))
+))
+
+to1po2$Alzheimers <- as.numeric(!is.na(to1po2$subtype) & to1po2$subtype == "Alzheimers")
+to1po2$Vascular   <- as.numeric(!is.na(to1po2$subtype) & to1po2$subtype == "Vascular")
+to1po2$Other      <- as.numeric(!is.na(to1po2$subtype) & to1po2$subtype == "Other")
+
+cat("nrow after subtype chunk:", nrow(to1po2), "\n")
+cat("sum ADRD after subtype chunk:", sum(to1po2$ADRD, na.rm=TRUE), "\n")
+
+
+# Verify: this should now match exactly, with zero left over
+cat("ADRD:            ", sum(to1po2$ADRD, na.rm=TRUE), "\n")
+cat("Alzheimers:      ", sum(to1po2$Alzheimers, na.rm=TRUE), "\n")
+cat("Vascular:        ", sum(to1po2$Vascular, na.rm=TRUE), "\n")
+cat("Other:           ", sum(to1po2$Other, na.rm=TRUE), "\n")
+cat("Sum of subtypes: ", sum(to1po2$Alzheimers, na.rm=TRUE) + sum(to1po2$Vascular, na.rm=TRUE) + sum(to1po2$Other, na.rm=TRUE), "\n")
+cat("Residual (should be 0):", sum(to1po2$ADRD, na.rm=TRUE) - (sum(to1po2$Alzheimers, na.rm=TRUE) + sum(to1po2$Vascular, na.rm=TRUE) + sum(to1po2$Other, na.rm=TRUE)), "\n")
+```
+
 
 ## 1.2 Creating income quartiles
 ```{r}
@@ -180,10 +217,31 @@ calc_standardized_beta <- function(model, data, covariate) {
 }
 ```
 
+## 1.7 Optional sensitivity analysis: removing ADRD cases within 5/10 years of blood sample
+```{r}
+# Sensitivity dataset: exclude ADRD cases within 10 years of AgeAtFirstDate
+to1po2_10 <- to1po2 %>%
+  filter(!(ADRD == 1 & (AgeAtLastDate - AgeAtFirstDate) < 10))
+
+# Sensitivity dataset: exclude ADRD cases within 5 years of AgeAtFirstDate
+to1po2_5 <- to1po2 %>%
+  filter(!(ADRD == 1 & (AgeAtLastDate - AgeAtFirstDate) < 5))
+
+nrow(to1po2)
+nrow(to1po2_5)
+nrow(to1po2_10)
+
+# Number of rows removed at each cutoff
+n_removed_10 <- nrow(to1po2) - nrow(to1po2_10) #3528
+n_removed_5  <- nrow(to1po2) - nrow(to1po2_5) #1615
+```
+
+
 # 2.0 Time to evenet analysis: main
 
 ## 2.1 ADRD
 ```{r}
+# for sensitivity analysis investigating assay drift, add "Provtagningsdatum" as a covariate
 # BA measures to be tested
 BA_measures <- c("kdm_advance_sd", "phenoage_advance_sd")
 
@@ -198,7 +256,7 @@ HR_BA <- data.frame(
 
 for (j in 1:length(BA_measures)) {
   # Sex-adjusted model
-  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender")), data = to1po2)
+  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender + Provtagningsdatum")), data = to1po2)
   coef_gender <- summary(fit_gender)
   row_index_gender <- (j * 2) - 1
   std_beta_gender <- calc_standardized_beta(fit_gender, to1po2, BA_measures[j])
@@ -211,7 +269,7 @@ for (j in 1:length(BA_measures)) {
   HR_BA[row_index_gender, "events"] <- fit_gender$nevent
   
   # Multivariable model
-  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva  ")), data = to1po2)
+  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva + Provtagningsdatum ")), data = to1po2)
   coef_multivariable <- summary(fit_multivariable)
   row_index_multivariable <- j * 2
   std_beta_multivariable <- calc_standardized_beta(fit_multivariable, to1po2, BA_measures[j])
@@ -246,7 +304,7 @@ HR_BA <- data.frame(
 
 for (j in 1:length(BA_measures)) {
   # Sex-adjusted model
-  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender")), data = to1po2)
+  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender + Provtagningsdatum")), data = to1po2)
   coef_gender <- summary(fit_gender)
   row_index_gender <- (j * 2) - 1
   std_beta_gender <- calc_standardized_beta(fit_gender, to1po2, BA_measures[j])
@@ -259,7 +317,7 @@ for (j in 1:length(BA_measures)) {
   HR_BA[row_index_gender, "events"] <- fit_gender$nevent
   
   # Multivariable model
-  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva  ")), data = to1po2)
+  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva + Provtagningsdatum ")), data = to1po2)
   coef_multivariable <- summary(fit_multivariable)
   row_index_multivariable <- j * 2
   std_beta_multivariable <- calc_standardized_beta(fit_multivariable, to1po2, BA_measures[j])
@@ -294,7 +352,7 @@ HR_BA <- data.frame(
 
 for (j in 1:length(BA_measures)) {
   # Sex-adjusted model
-  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender")), data = to1po2)
+  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender + Provtagningsdatum")), data = to1po2)
   coef_gender <- summary(fit_gender)
   row_index_gender <- (j * 2) - 1
   std_beta_gender <- calc_standardized_beta(fit_gender, to1po2, BA_measures[j])
@@ -307,7 +365,7 @@ for (j in 1:length(BA_measures)) {
   HR_BA[row_index_gender, "events"] <- fit_gender$nevent
   
   # Multivariable model
-  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva   ")), data = to1po2)
+  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva + Provtagningsdatum  ")), data = to1po2)
   coef_multivariable <- summary(fit_multivariable)
   row_index_multivariable <- j * 2
   std_beta_multivariable <- calc_standardized_beta(fit_multivariable, to1po2, BA_measures[j])
@@ -342,7 +400,7 @@ HR_BA <- data.frame(
 
 for (j in 1:length(BA_measures)) {
   # Sex-adjusted model
-  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender")), data = to1po2)
+  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender + Provtagningsdatum")), data = to1po2)
   coef_gender <- summary(fit_gender)
   row_index_gender <- (j * 2) - 1
   std_beta_gender <- calc_standardized_beta(fit_gender, to1po2, BA_measures[j])
@@ -355,7 +413,7 @@ for (j in 1:length(BA_measures)) {
   HR_BA[row_index_gender, "events"] <- fit_gender$nevent
   
   # Multivariable model
-  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva   ")), data = to1po2)
+  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva + Provtagningsdatum")), data = to1po2)
   coef_multivariable <- summary(fit_multivariable)
   row_index_multivariable <- j * 2
   std_beta_multivariable <- calc_standardized_beta(fit_multivariable, to1po2, BA_measures[j])
@@ -387,7 +445,7 @@ combined_results <- rbind(
 ```
 
 ```{r}
-write.table(as.data.frame(combined_results), "combined_results_ADRD_main.csv", sep = ";",
+write.table(as.data.frame(combined_results), out_path("combined_results_ADRD_main_sens_provtagningsdatum.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -909,7 +967,7 @@ combined_SveDem <- rbind(
 ```
 
 ```{r}
-write.table(as.data.frame(combined_SveDem), "combined_results_SveDem_main.csv", sep = ";",
+write.table(as.data.frame(combined_SveDem), out_path("combined_results_SveDem_main.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,

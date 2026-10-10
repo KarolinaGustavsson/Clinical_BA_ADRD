@@ -12,7 +12,11 @@ Covariates: sex, education level, income quartiles
 
 ## 1.1 P-value function
 ```{r}
-# Subgroup analysis (age cutoff 65)
+# Paths, output locations and analysis parameters come from config.R in the
+# repository root. Nothing below hardcodes a location.
+source(here::here("config.R"))
+
+# Subgroup analysis (age cutoff 45)
 p_value_results <- data.frame(
   Variable = character(),
   AgeGroup1 = character(),
@@ -291,7 +295,7 @@ combined_with_p <- merge(combined_df_agegroup_45, comparison_results, by = c("BA
 
 ## 1.9 Saving
 ```{r}
-write.table(as.data.frame(combined_with_p), "combined_df_agegroup_45_main.csv", sep = ";",
+write.table(as.data.frame(combined_with_p), out_path("combined_df_agegroup_45_main.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
@@ -533,7 +537,7 @@ combined_df_sex_with_p <- merge(combined_df_sex, gender_comparison_results, by =
 
 ## 2.8 Saving
 ```{r}
-write.table(as.data.frame(combined_df_sex_with_p), "combined_sex_main.csv", sep = ";",
+write.table(as.data.frame(combined_df_sex_with_p), out_path("combined_sex_main.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
