@@ -10,9 +10,13 @@ on the analysis platform where the analyses were run, with
 
 | | |
 |---|---|
-| R version | 4.5.3 (2026-03-11 ucrt) |
+| R version | 4.5.2 |
 | Platform | `x86_64-w64-mingw32/x64` |
 | OS | Windows 11 x64 (build 26100) |
+
+The analyses were run under R 4.5.2. The analysis platform was subsequently
+updated to 4.5.3, which is the version reported by the `sessionInfo()` output in
+the appendix below; the pipeline runs unchanged under both.
 
 Packages were installed to a project library on the analysis platform rather
 than to the default system library, because the platform has no outbound
@@ -30,16 +34,16 @@ CRAN.
 
 | | |
 |---|---|
+| Version used | the 2023-10-11 version of the package |
 | Declared version | 0.1.0 |
+| Commit | `380cd3e017ce2d3457d7fbec4f92e033fcaa49c7` |
 | Source | https://github.com/dayoonkwon/BioAge |
-| Commit used | `380cd3e017ce2d3457d7fbec4f92e033fcaa49c7` (2023-10-11) |
 
-The functions were used from a local copy of the package source taken in 2024,
-loaded directly rather than installed as a package, so R recorded no version
-or commit for them. The commit above is identified from the upstream history:
-it was the repository's `HEAD` for the whole of 2024 — there are no commits
-between 2023-10-11 and 2026-04-02 — so it is the only state of the package the
-analyses could have used.
+The functions were used from a local copy of the package source, loaded
+directly rather than installed as a package, so R recorded no version for
+them. The commit above is identified from the upstream history: it was the
+repository's `HEAD` from 2023-10-11 until April 2026, with no commits in
+between, so it is the state of the package the analyses used.
 
 ### Install the version these results were produced with
 
