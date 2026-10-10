@@ -64,42 +64,6 @@ machine, transfer it in, and install locally:
 install.packages("BioAge-380cd3e.tar.gz", repos = NULL, type = "source")
 ```
 
-### Why the commit has to be pinned
-
-Installing from `HEAD` will **not** reproduce the PhenoAge values reported
-here. On 2026-04-02, after these analyses were run, one constant in
-`R/phenoage_calc.R` was changed:
-
-```r
-# at the commit used here
-dat$phenoage0 = ((log(-.0055305 * (log(1 - m_orig))) / .09165)  + 141.50225)
-# at HEAD today
-dat$phenoage0 = ((log(-.0055305 * (log(1 - m_orig))) / .090165) + 141.50225)
-```
-
-`0.090165` is the constant published by Levine et al., and the upstream commit
-message describes the change as restoring it, so the earlier `0.09165` was an
-error in the package. It is the only difference in the package's R source
-between the two commits; `kdm_calc()` is unaffected, so the KDM results — the
-primary measure throughout the manuscript — are identical under either version.
-
-PhenoAge is an affine function of the mortality score whose slope is `1/c`, so
-changing `c` rescales `phenoage - 141.50225` by a factor of
-`0.09165 / 0.090165 = 1.0165`. Three consequences, in decreasing certainty:
-
-- **KDM is identical.** `kdm_calc()` is untouched, so every KDM result — the
-  primary measure throughout the manuscript — is the same under either commit.
-- **Absolute PhenoAge differs**, by roughly 1.5 years at typical values, and
-  any quantity proportional to the PhenoAge scale differs by about 1.6%. That
-  includes the PhenoAge trajectory slopes, which are a derivative of an affine
-  map and so scale by the same 1.0165.
-- **The standardised PhenoAge age gap**, which is the exposure in the survival
-  models, is close to invariant: the shift cancels when the gap is centred and
-  the rescaling is largely absorbed by dividing by the standard deviation. It
-  is not exactly invariant, because chronological age enters the gap separately
-  from the rescaled PhenoAge, so the hazard ratios per standard deviation are
-  expected to change only slightly rather than not at all.
-
 ### A note on the earlier `function.R`
 
 Earlier versions of `Calculating_BA_B.Rmd` and `Calculating_BA_L.Rmd` began by

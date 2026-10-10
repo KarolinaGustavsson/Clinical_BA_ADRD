@@ -25,10 +25,9 @@ source(here::here("config.R"))
 #     remotes::install_github("dayoonkwon/BioAge",
 #                             ref = "380cd3e017ce2d3457d7fbec4f92e033fcaa49c7")
 #
-# Pin the commit. The declared version is 0.1.0 at both that commit and the
-# current HEAD, but a constant in phenoage_calc.R changed afterwards, so
-# installing from HEAD does not reproduce the PhenoAge values reported here.
-# See DEPENDENCIES.md.
+# The commit is pinned deliberately: the declared version is 0.1.0 at both
+# that commit and the current HEAD, so the version number alone does not
+# identify the code these results were produced with. See DEPENDENCIES.md.
 #
 # Earlier versions of this script instead sourced a local helper file holding
 # a copy of the BioAge functions, as a way of making the package available
