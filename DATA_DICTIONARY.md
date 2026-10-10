@@ -256,6 +256,9 @@ Computed with `kdm_calc()` and `phenoage_calc()` from the **BioAge** package
 (Kwon & Belsky, *GeroScience* 2021), calibrated on the age-uniform training
 subset written by `Calculating_BA_B.Rmd`.
 
+The BioAge commit matters for PhenoAge and must be pinned when installing; see
+[DEPENDENCIES.md](DEPENDENCIES.md). KDM is unaffected.
+
 | Variable | Type | Description |
 |---|---|---|
 | `kdm` | num | Klemera–Doubal Method biological age, years |

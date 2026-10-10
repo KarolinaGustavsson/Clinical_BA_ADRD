@@ -19,9 +19,16 @@ Important note: We want the training set to be the same as for AMORIS (baseline)
 source(here::here("config.R"))
 
 # Biological age is computed with the BioAge package (Kwon & Belsky,
-# GeroScience 2021), installed from GitHub:
+# GeroScience 2021), installed from GitHub at the commit these results were
+# produced with:
 #
-#     remotes::install_github("dayoonkwon/BioAge")
+#     remotes::install_github("dayoonkwon/BioAge",
+#                             ref = "380cd3e017ce2d3457d7fbec4f92e033fcaa49c7")
+#
+# Pin the commit. The declared version is 0.1.0 at both that commit and the
+# current HEAD, but a constant in phenoage_calc.R changed afterwards, so
+# installing from HEAD does not reproduce the PhenoAge values reported here.
+# See DEPENDENCIES.md.
 #
 # Earlier versions of this script instead sourced a local helper file holding
 # a copy of the BioAge functions, as a way of making the package available

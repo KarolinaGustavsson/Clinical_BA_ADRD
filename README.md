@@ -45,8 +45,13 @@ Supplementary Table 12 and in [DATA_DICTIONARY.md](DATA_DICTIONARY.md) §4.6.
 Biological age estimation needs the `BioAge` package, which is not on CRAN:
 
 ```r
-remotes::install_github("dayoonkwon/BioAge")
+remotes::install_github("dayoonkwon/BioAge", ref = "380cd3e017ce2d3457d7fbec4f92e033fcaa49c7")
 ```
+
+Pin that commit. BioAge declares version `0.1.0` both at this commit and at its
+current `HEAD`, but a constant in `phenoage_calc.R` changed afterwards, so
+installing from `HEAD` will not reproduce the PhenoAge values reported here.
+[DEPENDENCIES.md](DEPENDENCIES.md) explains what changed and what it affects.
 
 **2. Point the code at your data.** Set one environment variable — for example
 in `~/.Renviron`:
