@@ -83,8 +83,6 @@ to1po2$Other <- ifelse(
   ifelse(to1po2$Dementia %in% other_codes, 1, 0)
 )
 
-# Adds the people with no dementia diagnosis but ATC code to alzheimers, the people with dementia drugs have alzheimers
-to1po2$Alzheimers <- ifelse(to1po2$ATC != "" & to1po2$Dementia == "" & to1po2$S_ADRD == "", 1, to1po2$Alzheimers)
 ```
 
 NEW 

@@ -621,13 +621,7 @@ slopes_dt <- dt[, if (.N >= 3) {
 results_phe <- merge(dt, slopes_dt, by = "sampleID", all.x = FALSE, all.y = TRUE)
 ```
 
-## 3.2 Time to event modeling
-```{r}
-slope_phe <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", "slope + intercept", "+ gender")), data = results_phe)
-  slope_phe_sum <- summary(slope_phe)
-```
-
-## 3.3 Making slopes (KDM)
+## 3.2 Making slopes (KDM)
 ```{r}
 library(data.table)
 
@@ -644,13 +638,7 @@ slopes_dt <- dt[, if (.N >= 3) {
 results_kdm <- merge(dt, slopes_dt, by = "sampleID", all.x = FALSE, all.y = TRUE)
 ```
 
-## 3.4 Time to event modeling
-```{r}
-slope_kdm <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", "slope + intercept", "+ gender")), data = results_kdm)
-  slope_kdm_sum <- summary(slope_kdm)
-```
-
-## 3.5 Deduplicated rows
+## 3.3 Deduplicated rows
 ```{r}
 library(dplyr)
 
@@ -686,7 +674,7 @@ slope_kdm_1row_sum <- summary(slope_kdm_1row)
 slope_kdm_1row_sum
 ```
 
-## 3.6 Sensitivity: robustness to removing one random measurement per individual
+## 3.4 Sensitivity: robustness to removing one random measurement per individual
 
 Per discussion with the biostatistician, individual slopes estimated from
 few repeated measurements (mean 4.35 per person) may be sensitive to which
@@ -697,7 +685,7 @@ This is repeated twice (two independent random removals) for both PhenoAge
 and KDM, so that the resulting HR table (Table 9) is produced twice for
 comparison against the original estimates.
 
-### 3.6.1 PhenoAge, random drop run 1
+### 3.4.1 PhenoAge, random drop run 1
 ```{r}
 set.seed(101)
 
@@ -747,7 +735,7 @@ Concordance= 0.539  (se = 0.004 )
 Likelihood ratio test= 53  on 3 df,   p=2e-11
 Wald test            = 54.48  on 3 df,   p=9e-12
 Score (logrank) test = 54.4  on 3 df,   p=9e-12
-### 3.6.2 PhenoAge, random drop run 2
+### 3.4.2 PhenoAge, random drop run 2
 ```{r}
 set.seed(202)
 
@@ -794,7 +782,7 @@ Concordance= 0.541  (se = 0.004 )
 Likelihood ratio test= 55.35  on 3 df,   p=6e-12
 Wald test            = 56.97  on 3 df,   p=3e-12
 Score (logrank) test = 56.91  on 3 df,   p=3e-12
-### 3.6.3 KDM, random drop run 1
+### 3.4.3 KDM, random drop run 1
 ```{r}
 set.seed(101)
 
@@ -841,7 +829,7 @@ Concordance= 0.53  (se = 0.004 )
 Likelihood ratio test= 56.15  on 3 df,   p=4e-12
 Wald test            = 56.93  on 3 df,   p=3e-12
 Score (logrank) test = 56.82  on 3 df,   p=3e-12
-### 3.6.4 KDM, random drop run 2
+### 3.4.4 KDM, random drop run 2
 ```{r}
 set.seed(202)
 
@@ -888,7 +876,7 @@ Concordance= 0.528  (se = 0.004 )
 Likelihood ratio test= 44.97  on 3 df,   p=9e-10
 Wald test            = 45.49  on 3 df,   p=7e-10
 Score (logrank) test = 45.43  on 3 df,   p=7e-10
-## 3.7 Table 9 (random-drop sensitivity), produced twice for comparison
+## 3.5 Table 9 (random-drop sensitivity), produced twice for comparison
 ```{r}
 extract_hr_table <- function(model_summary, label) {
   data.frame(

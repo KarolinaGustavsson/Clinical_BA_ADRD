@@ -62,9 +62,8 @@ the slope is the change in biological age per year of chronological age.
 
 **Survival models.** Fit Cox models with slope and intercept entered jointly,
 adjusted for sex, with ADRD as the outcome and chronological age as the
-timescale. Section 3.4 fits them on the merged, measurement-level frame;
-**section 3.5 collapses to one row per individual and refits, and that is what
-the manuscript reports** — see the note below.
+timescale. **Section 3.3 collapses to one row per individual before fitting,
+and that is what the manuscript reports** — see the note below.
 
 **Sensitivity.** Randomly remove one measurement per individual, re-estimate
 the slopes and intercepts, and refit; repeated twice, for both KDM and
@@ -132,21 +131,20 @@ two-stage fit); `age_bin`; `n_measurements`; `ADRD`, `Alzheimers`, `Vascular`,
 **1. Analytic grain — the thing to get right here.**
 `results_dt` holds one row per *measurement occasion*. The trajectory
 `intercept` and `slope` are *person-level* quantities, but they are merged
-back onto every measurement row for that person (`BA_rate_L.Rmd` §3.3). A Cox
+back onto every measurement row for that person (`BA_rate_L.Rmd` §3.2). A Cox
 model fitted on that merged frame enters each participant into the partial
 likelihood once per measurement, which inflates the effective sample size and
 understates the standard errors.
 
 `BA_rate_L.Rmd` therefore collapses to one row per individual before fitting
-the models it reports, in §3.5:
+the models it reports, in §3.3:
 
 ```r
 results_kdm_1row <- results_kdm %>%
   distinct(sampleID, .keep_all = TRUE)
 ```
 
-The measurement-level fit in §3.4 is kept so the difference is visible, but it
-is not what the manuscript reports. Any new model whose exposure is a
+Any new model whose exposure is a
 person-level summary must be fitted on the de-duplicated frame.
 
 The trajectory models in scripts 4 and 5 *are* fitted on measurement-level
