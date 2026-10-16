@@ -103,6 +103,7 @@ Clinical_BA_ADRD/
 │   ├── CoxPH_SveDem_censored_B.Rmd    # adjudicated SveDem subanalysis
 │   ├── CoxPH_subgroups_B.Rmd          # age- and sex-stratified models
 │   ├── Table1_B.Rmd                   # Table 1, biological age groups
+│   ├── Forest_plots_B.Rmd             # forest plots (Fig. 5, Supp. Figs. 14–24)
 │   └── Fine_Gray/                     # competing risks (Supp. Table 9)
 │
 ├── Longitudinal/                      # repeated-measures analysis
