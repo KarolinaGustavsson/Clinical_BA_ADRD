@@ -8,8 +8,9 @@ Everything behind a published result lives in [`Baseline/`](../Baseline) and
 [`Longitudinal/`](../Longitudinal) instead. The split is by where the result
 appears, not by how the analysis was done — a sensitivity analysis reported in
 the supplementary information (for example the Fine-Gray models in
-Supplementary Table 9, or the preclinical-exclusion models in `CoxPH_B.Rmd`)
-stays in the main folders.
+Supplementary Table 9) stays in the main folders. Analyses that share code
+with the main models also stay there: the preclinical-exclusion models
+(Response Figs. 2–3) are in `CoxPH_B.Rmd`.
 
 The subfolders mirror the main structure: `Baseline/` for the cross-sectional
 cohort, `Longitudinal/` for the repeated-measures subsample. Scripts source
@@ -66,19 +67,19 @@ individual-level. It stays inside the secure environment; see
 
 ## Longitudinal/Trajectories_binned_calyear_L.Rmd
 
-`Trajectories_binned_L.Rmd` with one term added to every model:
+`Trajectories_binned_L.Rmd` with one calendar-year term added to every model:
 
 ```r
-lm(phenoage ~ age + age_bin + age:age_bin)                       # published
-lm(phenoage ~ age + age_bin + age:age_bin + factor(kalenderar))  # here
+lm(phenoage ~ age * age_bin)               # published
+lm(phenoage ~ age * age_bin + cal_year_c)  # here (section 5.0)
 ```
 
-Year fixed effects rather than a linear year term, so a reagent or instrument
-change that shifts values in a single year is absorbed as well as a steady
-drift. The calendar term does not interact with age, so the bin slopes are
-recovered from the coefficient vector exactly as in the published model. The
-`CAL_ADJ` switch at the top selects `"linear"`, `"factor"` or `"none"`; `"none"`
-reproduces the published model as a check. Every output file carries the `TAG`
+The `CAL_ADJ` switch at the top selects a linear year term (`"linear"`, the
+default, and what the response reports), year fixed effects (`"factor"`, which
+also absorbs a reagent or instrument change that shifts values in a single
+year) or `"none"`, which reproduces the model without calendar year as a check.
+The calendar term does not interact with age, so the bin slopes are recovered
+from the coefficient vector exactly as in the model without it. Every output file carries the `TAG`
 suffix so a run cannot overwrite the published results.
 
 Note: the slope models in sections 2.1 and 2.3 still use the earlier

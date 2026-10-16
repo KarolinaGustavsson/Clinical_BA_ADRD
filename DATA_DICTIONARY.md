@@ -47,6 +47,9 @@ Longitudinal/
   11. Trajectories_binned_L.Rmd        5-year age-bin trajectories, sex differences
   12. Trajectories_GAM_L.Rmd           smooth trajectories
    |
+Baseline/
+  13. Forest_plots_B.Rmd               forest plots, from the saved results of 3–5 and 10
+   |
 Review/                               analyses cited in the response to
                                       reviewers only — see Review/README.md
 ```
@@ -349,10 +352,10 @@ Person-level summaries produced in the repeated-measures subsample.
 | `n_measurements` | num | Number of pre-diagnosis measurement occasions for an individual (minimum 3; mean 4.35) |
 | `intercept` | num | Per-individual regression intercept: estimated biological age at that individual's **first** measurement, from `lm(biological age ~ centred chronological age)` |
 | `slope` | num | Per-individual rate of change in biological age per year of chronological age, from the same fit |
-| `age_bin` | factor | 5-year chronological-age band, 17–82, used in the binned trajectory model |
+| `age_bin` | factor | 5-year chronological-age band from 17 up to the oldest observed age, used in the binned trajectory model; the 13 bands in 17–82 are reported |
 | `lower_CI`, `upper_CI` | num | Cluster-robust 95% confidence limits for a bin slope, clustered on `sampleID` |
 | `diff_women_minus_men` | num | Sex difference in bin slope, from the joint interaction model |
-| `wald_statistic`, `degrees_of_freedom`, `p_value` | num | Global Wald test for heterogeneity of slopes across bins |
+| `wald_statistic`, `degrees_of_freedom`, `p_value` | num | Global Wald test for heterogeneity of slopes across the 13 reported bins (17–82 years, 12 degrees of freedom) |
 
 The binned trajectory model is
 `lm(biological age ~ age + age_bin + age:age_bin)` — bin main effects **and**
@@ -373,9 +376,9 @@ encoding (`config.R` §6), and read back with the same settings.
 | `training_set_baseline.csv` | one row per individual | `sampleID`, `age`, `gender`, the 12 biomarkers | **Individual-level.** Never leaves the secure environment |
 | `table1_kdmgroups_baseline_perID.csv` | one row per individual | `sampleID`, `KDM_group` | **Individual-level.** Never leaves the secure environment |
 | `bioage_scale_df_table.csv` | one row per measure | measure, mean, s.d. | Aggregate |
-| `GAM_ci_per5year.csv` | one row per 5-year age point | age, fit, lower, upper | Aggregate (Supp. Tables 5, 8) |
-| `trajectory_table_*.csv` | one row per age bin | bin, slope, CI, n | Aggregate (Supp. Tables 3–4, 6–7) |
-| `combined_results_*.csv` | one row per model | outcome, measure, HR, CI, p | Aggregate (Fig. 5, Supp. Figs. 14–24) |
+| `GAM_ci_per5year.csv` | one row per 5-year age point | age, fit, lower, upper | Aggregate (Supp. Table 8) |
+| `trajectory_table_*.csv` | one row per age bin | bin, slope, CI, n | Aggregate (Supp. Tables 4–5) |
+| `combined_results_*.csv` | one row per model | outcome, measure, HR, CI, p | Aggregate (Fig. 5, Supp. Figs. 14–21, 23–24) |
 | `combined_df_agegroup_*.csv`, `combined_sex_*.csv` | one row per model | stratum, outcome, HR, CI, p | Aggregate (Fig. 5b–c) |
 | `finegray_project1_*.csv` | one row per model | outcome, model, sHR, CI, p | Aggregate (Supp. Table 9) |
 | `table9_random_drop_sensitivity_RMA.csv` | one row per model | run, exposure, HR, CI | Aggregate (Supp. Tables 10–11) |
@@ -447,8 +450,9 @@ is described.
 | `Longitudinal/Calculating_BA_L.Rmd` | Biological age at every measurement occasion, calibrated on the baseline training set | Age-distribution and scatter supplementary figures for the longitudinal subset |
 | `Longitudinal/Table1_L.Rmd` | Repeated-measures descriptives: measurements per person, spacing, follow-up, by biological age group and ADRD status | Descriptive supplementary tables for the longitudinal subset |
 | `Longitudinal/BA_rate_L.Rmd` | Per-individual slope and intercept; two-stage Cox models; baseline models refitted in the longitudinal subset; random drop-one-measurement sensitivity | **Supp. Tables 10–11**; longitudinal-subset baseline supplementary figures |
-| `Longitudinal/Trajectories_binned_L.Rmd` | 5-year age-bin trajectories with cluster-robust intervals; global Wald test; sex differences from the joint interaction model, with pointwise intervals | Fig. 4; **Supp. Tables 3–4, 6–7**; binned-trajectory supplementary figures |
-| `Longitudinal/Trajectories_GAM_L.Rmd` | Smooth trajectories by GAM with cluster-robust confidence bands; density-shaded spaghetti plots | Fig. 3; **Supp. Tables 5, 8** |
+| `Longitudinal/Trajectories_binned_L.Rmd` | 5-year age-bin trajectories with cluster-robust intervals; global Wald test; sex differences from the joint interaction model, with pointwise intervals | Fig. 4; **Supp. Tables 4–7**; binned-trajectory supplementary figures |
+| `Longitudinal/Trajectories_GAM_L.Rmd` | Smooth trajectories by GAM with cluster-robust confidence bands; density-shaded spaghetti plots | Fig. 3; **Supp. Table 8** |
+| `Baseline/Forest_plots_B.Rmd` | Forest plots from the saved Cox results | Fig. 5; Supp. Figs. 14–21, 23–24 |
 | `Review/**` | Analyses cited in the response to reviewers only | See [Review/README.md](Review/README.md) |
 
 ## 9. Data access

@@ -76,13 +76,15 @@ PhenoAge (Supplementary Tables 10–11).
 
 ### 4. `Trajectories_binned_L.Rmd` — 5-year age bins and sex differences
 
-- Chronological age in 5-year bins across 17–82
+- Chronological age in 5-year bins from 17 up to the oldest observed age;
+  results are reported for the 13 bins in 17–82
 - `lm(biological age ~ age + age_bin + age:age_bin)` — bin main effects **and**
   the interaction, so each bin is fitted with its own intercept and its own
   slope, with 17–22 as the reference
 - Cluster-robust standard errors (`sandwich`), clustered on `sampleID`, for
   the repeated measurements
-- Global Wald test for whether the slopes differ across bins
+- Global Wald test for whether the slopes differ across the 13 reported bins
+  (17–82 years, 12 degrees of freedom)
 - Sex differences from a joint interaction model including age, bin, sex and
   their interactions, giving sex-specific slopes and their differences with
   pointwise intervals, for the whole cohort and for men and women separately

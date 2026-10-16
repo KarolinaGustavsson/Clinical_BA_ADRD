@@ -138,8 +138,9 @@ modelling choices and the fallbacks if memory runs out.
 
 ### 8. `Forest_plots_B.Rmd` — forest plots
 
-Draws the forest plots in Fig. 5 and Supplementary Figs. 14–24 from the
-results tables written by scripts 3–5 and by `Longitudinal/BA_rate_L.Rmd`.
+Draws the forest plots in Fig. 5 and Supplementary Figs. 14–21 and 23–24
+from the results tables written by scripts 3–5 and by
+`Longitudinal/BA_rate_L.Rmd`, so run it after that script.
 A table at the top of the notebook maps each figure to its input file.
 
 **Outputs:** PDF figures in `fig_path()`.

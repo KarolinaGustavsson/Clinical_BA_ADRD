@@ -4,7 +4,7 @@ output: html_notebook
 author: Karolina Gustavsson
 ---
 
-Forest plots for the Cox models (Fig. 5 and Supplementary Figs. 14–24).
+Forest plots for the Cox models (Fig. 5 and Supplementary Figs. 14–21, 23–24).
 
 Input data: the results tables written by `CoxPH_B.Rmd`,
 `CoxPH_SveDem_censored_B.Rmd`, `CoxPH_subgroups_B.Rmd` and
