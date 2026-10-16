@@ -71,7 +71,9 @@ it cannot be skipped.
   added as a covariate; and with ADRD cases occurring within 5 or 10 years of
   baseline excluded (`to1po2_5`, `to1po2_10`)
 
-**Outputs:** `combined_results_ADRD_main_sens_provtagningsdatum.csv`,
+**Outputs:** `combined_results_ADRD_main.csv` (main models;
+`combined_results_ADRD_main_sens_provtagningsdatum.csv` when sampling date is
+added for the sensitivity analysis),
 `combined_results_SveDem_main.csv`.
 
 ---

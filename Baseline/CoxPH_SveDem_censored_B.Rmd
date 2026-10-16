@@ -241,7 +241,9 @@ n_removed_5  <- nrow(to1po2) - nrow(to1po2_5) #1615
 
 ## 2.1 ADRD
 ```{r}
-# for sensitivity analysis investigating assay drift, add "Provtagningsdatum" as a covariate
+# Main models (as reported). For the assay-drift sensitivity analysis, add
+# "+ Provtagningsdatum" to each formula and save as
+# combined_results_ADRD_main_sens_provtagningsdatum.csv instead.
 # BA measures to be tested
 BA_measures <- c("kdm_advance_sd", "phenoage_advance_sd")
 
@@ -256,7 +258,7 @@ HR_BA <- data.frame(
 
 for (j in 1:length(BA_measures)) {
   # Sex-adjusted model
-  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender + Provtagningsdatum")), data = to1po2)
+  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender")), data = to1po2)
   coef_gender <- summary(fit_gender)
   row_index_gender <- (j * 2) - 1
   std_beta_gender <- calc_standardized_beta(fit_gender, to1po2, BA_measures[j])
@@ -269,7 +271,7 @@ for (j in 1:length(BA_measures)) {
   HR_BA[row_index_gender, "events"] <- fit_gender$nevent
   
   # Multivariable model
-  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva + Provtagningsdatum ")), data = to1po2)
+  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva")), data = to1po2)
   coef_multivariable <- summary(fit_multivariable)
   row_index_multivariable <- j * 2
   std_beta_multivariable <- calc_standardized_beta(fit_multivariable, to1po2, BA_measures[j])
@@ -304,7 +306,7 @@ HR_BA <- data.frame(
 
 for (j in 1:length(BA_measures)) {
   # Sex-adjusted model
-  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender + Provtagningsdatum")), data = to1po2)
+  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender")), data = to1po2)
   coef_gender <- summary(fit_gender)
   row_index_gender <- (j * 2) - 1
   std_beta_gender <- calc_standardized_beta(fit_gender, to1po2, BA_measures[j])
@@ -317,7 +319,7 @@ for (j in 1:length(BA_measures)) {
   HR_BA[row_index_gender, "events"] <- fit_gender$nevent
   
   # Multivariable model
-  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva + Provtagningsdatum ")), data = to1po2)
+  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Alzheimers) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva")), data = to1po2)
   coef_multivariable <- summary(fit_multivariable)
   row_index_multivariable <- j * 2
   std_beta_multivariable <- calc_standardized_beta(fit_multivariable, to1po2, BA_measures[j])
@@ -352,7 +354,7 @@ HR_BA <- data.frame(
 
 for (j in 1:length(BA_measures)) {
   # Sex-adjusted model
-  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender + Provtagningsdatum")), data = to1po2)
+  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender")), data = to1po2)
   coef_gender <- summary(fit_gender)
   row_index_gender <- (j * 2) - 1
   std_beta_gender <- calc_standardized_beta(fit_gender, to1po2, BA_measures[j])
@@ -365,7 +367,7 @@ for (j in 1:length(BA_measures)) {
   HR_BA[row_index_gender, "events"] <- fit_gender$nevent
   
   # Multivariable model
-  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva + Provtagningsdatum  ")), data = to1po2)
+  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Vascular) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva")), data = to1po2)
   coef_multivariable <- summary(fit_multivariable)
   row_index_multivariable <- j * 2
   std_beta_multivariable <- calc_standardized_beta(fit_multivariable, to1po2, BA_measures[j])
@@ -400,7 +402,7 @@ HR_BA <- data.frame(
 
 for (j in 1:length(BA_measures)) {
   # Sex-adjusted model
-  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender + Provtagningsdatum")), data = to1po2)
+  fit_gender <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender")), data = to1po2)
   coef_gender <- summary(fit_gender)
   row_index_gender <- (j * 2) - 1
   std_beta_gender <- calc_standardized_beta(fit_gender, to1po2, BA_measures[j])
@@ -413,7 +415,7 @@ for (j in 1:length(BA_measures)) {
   HR_BA[row_index_gender, "events"] <- fit_gender$nevent
   
   # Multivariable model
-  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva + Provtagningsdatum")), data = to1po2)
+  fit_multivariable <- coxph(as.formula(paste("Surv(AgeAtFirstDate, AgeAtLastDate, Other) ~", BA_measures[j], "+ gender + income_bins + NewUtbNiva")), data = to1po2)
   coef_multivariable <- summary(fit_multivariable)
   row_index_multivariable <- j * 2
   std_beta_multivariable <- calc_standardized_beta(fit_multivariable, to1po2, BA_measures[j])
@@ -445,7 +447,7 @@ combined_results <- rbind(
 ```
 
 ```{r}
-write.table(as.data.frame(combined_results), out_path("combined_results_ADRD_main_sens_provtagningsdatum.csv"), sep = ";",
+write.table(as.data.frame(combined_results), out_path("combined_results_ADRD_main.csv"), sep = ";",
             dec = ",",
             row.names = FALSE,
             quote = FALSE,
