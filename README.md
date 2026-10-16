@@ -1,5 +1,7 @@
 # Longitudinal Biological Aging and Risk of Dementia in a Large Prospective Swedish Cohort
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23420921.svg)](https://doi.org/10.5281/zenodo.23420921)
+
 R code for the analyses in the manuscript. The analysis examines both
 **baseline biological age** and the **rate of change in biological age** as
 exposures for Alzheimer's disease and related dementias (ADRD) in the AMORIS
@@ -212,4 +214,12 @@ Gustavsson K, Sjölander A, Mostafaei S, Mak JKL, Religa D, Käll L, Modig K,
 Hägg S. *Longitudinal biological aging and risk of dementia in a large
 prospective Swedish cohort*. Manuscript under review, 2026.
 
-A formal citation will be added on publication.
+The version of the code used for the revised manuscript is archived at Zenodo:
+
+Gustavsson K, Sjölander A, Mostafaei S, Mak JKL, Religa D, Käll L, Modig K,
+Hägg S. *Clinical_BA_ADRD* (v1.0.0). Zenodo, 2026.
+https://doi.org/10.5281/zenodo.23420921
+
+The concept DOI https://doi.org/10.5281/zenodo.23420920 always resolves to the
+latest archived version. A formal citation of the article will be added on
+publication.
