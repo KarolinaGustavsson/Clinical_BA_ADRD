@@ -81,6 +81,15 @@ recovered from the coefficient vector exactly as in the published model. The
 reproduces the published model as a check. Every output file carries the `TAG`
 suffix so a run cannot overwrite the published results.
 
+Note: the slope models in sections 2.1 and 2.3 still use the earlier
+shared-intercept specification (`age + age:age_bin`), and `CAL_ADJ` defaults
+to `"linear"`. Section 5.0 repeats the comparison with the current
+specification (`age * age_bin`, as in Supplementary Tables 4-5) and a linear
+calendar-year term, fitted with and without calendar year on identical rows.
+That is the comparison quoted in the response to reviewers: the largest change
+in any slope over the 13 reported bins (17-82 years) was 0.009. The
+sex-difference models in section 3 already use the current specification.
+
 ---
 
 ## Not included here

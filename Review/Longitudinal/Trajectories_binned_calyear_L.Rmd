@@ -1139,3 +1139,59 @@ pdf(fig_path("trajectory_all_phe_driftplot.pdf"),
 print(drift_plot)  # Send plot to file
 dev.off()  # Close device
 ```
+
+# 5.0 Calendar-year check against the current trajectory model
+
+Sections 2.1 and 2.3 above use the earlier shared-intercept specification
+(`age + age:age_bin`). The trajectories reported in Supplementary Tables 4-5
+use bin-specific intercepts (`age * age_bin`). This section refits that
+current model with and without calendar year, on identical rows, and reports
+the change in each slope for the 13 reported bins (17-82 years). This is the
+comparison quoted in the response to Reviewer 3 (comment 8).
+
+```{r}
+library(dplyr)
+library(sandwich)
+
+bin_breaks <- seq(17, ceiling(max(results_dt$age, na.rm = TRUE)), by = 5)  # same bins as the main analysis
+
+slopes_by_bin <- function(fit, vc) {
+  co <- coef(fit); bins <- levels(model.frame(fit)$age_bin)
+  out <- t(sapply(bins, function(b) {
+    term <- paste0("age:age_bin", b)
+    if (b == bins[1]) c(co["age"], sqrt(vc["age", "age"]))
+    else c(co["age"] + co[term], sqrt(vc["age", "age"] + vc[term, term] + 2 * vc["age", term]))
+  }))
+  colnames(out) <- c("slope", "se"); out
+}
+
+compare_calyear <- function(data, ba, label) {
+  d <- data %>%
+    filter(!is.na(age), !is.na(.data[[ba]]), !is.na(cal_year_c)) %>%
+    group_by(sampleID) %>% filter(n() >= 3) %>% ungroup() %>%
+    mutate(age_bin = cut(age, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
+  f0 <- lm(as.formula(paste(ba, "~ age * age_bin")), data = d)               # as in Supp. Tables 4-5
+  f1 <- lm(as.formula(paste(ba, "~ age * age_bin + cal_year_c")), data = d)  # + linear calendar year
+  s0 <- slopes_by_bin(f0, vcovCL(f0, cluster = d$sampleID))
+  s1 <- slopes_by_bin(f1, vcovCL(f1, cluster = d$sampleID))
+  keep <- as.numeric(sub(".*,([0-9.]+)[])]$", "\\1", rownames(s0))) <= 82
+  data.frame(model = label, age_bin = rownames(s0)[keep],
+             slope = round(s0[keep, "slope"], 4), slope_calyear = round(s1[keep, "slope"], 4),
+             change = round(s1[keep, "slope"] - s0[keep, "slope"], 4), row.names = NULL)
+}
+
+calyear_check <- bind_rows(
+  compare_calyear(results_dt,                           "kdm",      "KDM, all"),
+  compare_calyear(results_dt[results_dt$gender == 1, ], "kdm",      "KDM, men"),
+  compare_calyear(results_dt[results_dt$gender == 2, ], "kdm",      "KDM, women"),
+  compare_calyear(results_dt,                           "phenoage", "PhenoAge, all"),
+  compare_calyear(results_dt[results_dt$gender == 1, ], "phenoage", "PhenoAge, men"),
+  compare_calyear(results_dt[results_dt$gender == 2, ], "phenoage", "PhenoAge, women")
+)
+
+print(calyear_check %>% group_by(model) %>% summarise(max_abs_change = max(abs(change))))
+cat("Largest change in any slope (17-82 years):", max(abs(calyear_check$change)), "\n")
+
+write.table(calyear_check, out_path(paste0("calyear_check_current_model", TAG, ".csv")),
+            sep = ";", dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+```
