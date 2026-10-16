@@ -1,0 +1,394 @@
+---
+title: "Forest_plots_B"
+output: html_notebook
+author: Karolina Gustavsson
+---
+
+Forest plots for the Cox models (Fig. 5 and Supplementary Figs. 14–24).
+
+Input data: the results tables written by `CoxPH_B.Rmd`,
+`CoxPH_SveDem_censored_B.Rmd`, `CoxPH_subgroups_B.Rmd` and
+`Longitudinal/BA_rate_L.Rmd`, read from the output directory set in `config.R`.
+Figures are written to `fig_path()`.
+
+| Figure | Model | Input |
+|---|---|---|
+| Fig. 5a, Supp. Fig. 17 | Multivariable, KDM / PhenoAge | `combined_results_ADRD_main.csv` |
+| Supp. Figs. 14, 16 | Sex-adjusted, KDM / PhenoAge | `combined_results_ADRD_main.csv` |
+| Supp. Figs. 15, 21 | Multivariable, fasting overnight | `combined_results_ADRD_main_F.csv` |
+| Supp. Figs. 23, 24 | Multivariable, longitudinal subset | `combined_results_ADRD_Baseline_forL.csv` |
+| Fig. 5b, Supp. Fig. 18 | Stratified by baseline age (45 years) | `combined_df_agegroup_45_main.csv` |
+| Fig. 5c, Supp. Fig. 19 | Stratified by sex | `combined_sex_main.csv` |
+| Fig. 5d, Supp. Fig. 20 | SveDem cases, other cases right-censored | `combined_results_SveDem_rightcensored.csv` |
+
+# 1.0 Setup
+
+```{r}
+# Paths, output locations and analysis parameters come from config.R in the
+# repository root. Nothing below hardcodes a location.
+source(here::here("config.R"))
+
+library(dplyr)
+library(ggplot2)
+library(rlang)
+library(grid)
+```
+
+## 1.1 Forest plot function
+
+Each row is one outcome; several exposures or strata can share a row, offset
+vertically (`shape_dodge`). Filled markers indicate P < 0.05. The estimate and
+its interval are printed 0.5 cm to the right of the panel.
+
+```{r}
+custom_forestplot <- function(df,
+                              estimate,
+                              se,
+                              pvalue,
+                              name,
+                              shape = NULL,
+                              aspect_ratio = NULL,
+                              point_size = 3,
+                              line_size = 0.6,
+                              stroke_size = 0.4,
+                              shape_dodge = 0.25,
+                              text_size = 12,
+                              axis_label_size = 13,
+                              x_axis_text_size = NULL,
+                              y_axis_text_size = NULL,
+                              legend_text_size = 11,
+                              estimate_text_size = 3.5,
+                              xlab = "Hazard Ratio (95% CI)",
+                              xtickbreaks = NULL,
+                              outcome_order = NULL,
+                              outcome_labels = NULL,
+                              shape_values = NULL,
+                              shape_labels = NULL,
+                              legend_title = "Group",
+                              show_legend = TRUE) {
+
+  estimate <- enquo(estimate)
+  se <- enquo(se)
+  pvalue <- enquo(pvalue)
+  name <- enquo(name)
+  shape <- enquo(shape)
+
+  const <- qnorm(0.975)
+
+  df <- df %>%
+    mutate(
+      .estimate = !!estimate,
+      .se = !!se,
+      .xmin = .estimate - const * .se,
+      .xmax = .estimate + const * .se,
+      .filled = if (!quo_is_null(pvalue)) (!!pvalue < 0.05) else TRUE,
+      .label = sprintf("%.2f (%.2f, %.2f)", .estimate, .xmin, .xmax)
+    )
+
+  # Outcome order (top to bottom) and display labels
+  if (!is.null(outcome_order)) {
+    df <- df %>% mutate(.group = factor(!!name, levels = rev(outcome_order)))
+  } else {
+    df <- df %>% mutate(.group = factor(!!name, levels = rev(unique(!!name))))
+  }
+
+  if (!is.null(outcome_labels)) {
+    df <- df %>% mutate(.group_label = recode(as.character(.group), !!!outcome_labels))
+  } else {
+    df <- df %>% mutate(.group_label = as.character(.group))
+  }
+
+  df <- df %>%
+    mutate(
+      .group_index = as.numeric(.group),
+      .shape_index = as.numeric(factor(!!shape)),
+      .shape_label = as.character(!!shape)
+    )
+
+  if (!is.null(shape_labels)) {
+    df <- df %>% mutate(.shape_label = recode(.shape_label, !!!shape_labels))
+  }
+
+  n_shapes <- length(unique(df$.shape_label))
+
+  df <- df %>%
+    mutate(.y = .group_index + (.shape_index - (n_shapes + 1) / 2) * shape_dodge)
+
+  x_min <- min(df$.xmin, na.rm = TRUE)
+  x_max <- max(df$.xmax, na.rm = TRUE)
+
+  if (is.null(xtickbreaks)) {
+    xtickbreaks <- pretty(c(x_min, x_max), n = 7)
+  }
+  if (!1 %in% xtickbreaks) {
+    xtickbreaks <- sort(unique(c(xtickbreaks, 1)))
+  }
+
+  # Alternating background bands, one per outcome
+  y_bands <- unique(df[c(".group_index", ".group", ".group_label")])
+  band_top <- max(y_bands$.group_index + 0.5)
+  band_bottom <- min(y_bands$.group_index - 0.5)
+
+  bg_rects <- df %>%
+    distinct(.group_index, .group_label) %>%
+    arrange(.group_index) %>%
+    mutate(
+      ymin = .group_index - 0.5,
+      ymax = .group_index + 0.5,
+      xmin = -Inf,
+      xmax = Inf,
+      fill = rep(c("grey88", "white"), length.out = n())
+    )
+
+  # Dashed vertical grid lines, clipped to the bands
+  vline_data <- lapply(xtickbreaks, function(x) {
+    data.frame(x = x, xend = x, y = band_bottom, yend = band_top)
+  }) %>% bind_rows()
+
+  shape_guide <- guide_legend(
+    title = if (!is.null(legend_title)) legend_title else NULL,
+    override.aes = list(fill = "black")
+  )
+
+  if (is.null(x_axis_text_size)) x_axis_text_size <- axis_label_size
+  if (is.null(y_axis_text_size)) y_axis_text_size <- axis_label_size
+
+  p <- ggplot(df, aes(x = .estimate, y = .y)) +
+    geom_rect(data = bg_rects,
+              aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+              inherit.aes = FALSE,
+              fill = bg_rects$fill, color = "grey65", linewidth = 0.3) +
+    geom_segment(data = vline_data,
+                 aes(x = x, xend = xend, y = y, yend = yend),
+                 inherit.aes = FALSE,
+                 linetype = "dashed", color = "grey65", size = 0.4) +
+    geom_segment(aes(x = 1, xend = 1, y = min(bg_rects$ymin), yend = max(bg_rects$ymax)),
+                 inherit.aes = FALSE,
+                 linetype = "solid", color = "black", size = 0.6) +
+    geom_segment(aes(x = .xmin, xend = .xmax, y = .y, yend = .y),
+                 size = line_size, color = "black") +
+    geom_point(aes(shape = !!shape, fill = .filled),
+               size = point_size, stroke = stroke_size, color = "black") +
+    scale_fill_manual(values = c("TRUE" = "black", "FALSE" = "white")) +
+    scale_y_continuous(
+      breaks = y_bands$.group_index,
+      labels = y_bands$.group_label,
+      expand = c(0.01, 0.01)
+    ) +
+    scale_x_continuous(
+      breaks = xtickbreaks,
+      expand = expansion(mult = c(0.05, 0.05))
+    ) +
+    labs(x = xlab, y = NULL) +
+    coord_cartesian(clip = "off") +
+    theme_minimal(base_size = text_size) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.y = element_text(size = y_axis_text_size, color = "black"),
+      axis.text.x = element_text(size = x_axis_text_size, color = "black"),
+      legend.title = element_text(size = legend_text_size),
+      legend.text = element_text(size = legend_text_size),
+      legend.position = if (show_legend) "bottom" else "none",
+      legend.box = "horizontal",
+      axis.text.y.left = element_text(margin = margin(r = 10)),
+      plot.margin = margin(5.5, 180, 5.5, 5.5),
+      plot.background = element_rect(fill = "white", color = NA),
+      aspect.ratio = aspect_ratio
+    ) +
+    guides(fill = "none", shape = shape_guide)
+
+  if (!is.null(shape_values)) {
+    p <- p + scale_shape_manual(values = shape_values, labels = shape_labels)
+  }
+
+  # Estimate labels at a fixed distance to the right of the panel
+  for (i in seq_len(nrow(df))) {
+    p <- p + annotation_custom(
+      grob = grid::textGrob(
+        df$.label[i],
+        x = unit(1, "npc") + unit(0.5, "cm"),
+        y = unit(df$.y[i], "native"),
+        hjust = 0,
+        gp = gpar(fontsize = estimate_text_size * 2.85)
+      ),
+      ymin = df$.y[i], ymax = df$.y[i], xmin = -Inf, xmax = Inf
+    )
+  }
+
+  p
+}
+```
+
+## 1.2 Shared settings
+
+```{r}
+ba_shapes <- c("kdm_advance_sd" = 21, "phenoage_advance_sd" = 22)
+ba_labels <- c("kdm_advance_sd" = "KDM", "phenoage_advance_sd" = "PhenoAge")
+ba_short  <- c("kdm_advance_sd" = "kdm", "phenoage_advance_sd" = "phe")
+
+subtype_order  <- c("ADRD", "Alzheimers", "Vascular", "Other")
+subtype_labels <- c("ADRD" = "ADRD", "Alzheimers" = "AD", "Vascular" = "VaD", "Other" = "Other")
+
+# One biological age measure, ADRD and the three subtypes (Fig. 5a and the
+# corresponding supplementary figures)
+plot_subtypes <- function(df, ba) {
+  custom_forestplot(
+    df = df %>% filter(BA == ba),
+    estimate = HR, se = se, pvalue = p, name = outcome, shape = BA,
+    shape_values = ba_shapes[ba], shape_labels = ba_labels[ba],
+    show_legend = FALSE,
+    point_size = 4, line_size = 1.5, stroke_size = 0.5, shape_dodge = 0.5,
+    text_size = 15, axis_label_size = 10, y_axis_text_size = 12, x_axis_text_size = 10,
+    estimate_text_size = 4.5, aspect_ratio = 0.3,
+    outcome_order = subtype_order, outcome_labels = subtype_labels
+  )
+}
+
+save_plot <- function(plot, filename, width, height) {
+  ggsave(filename = fig_path(filename), plot = plot,
+         width = width, height = height, units = "in", dpi = 1000, limitsize = FALSE)
+}
+```
+
+# 2.0 ADRD and subtypes
+
+## 2.1 Main analysis (Fig. 5a, Supp. Figs. 14, 16, 17)
+
+```{r}
+main_results <- read.csv2(out_path("combined_results_ADRD_main.csv"))
+
+for (ba in names(ba_shapes)) {
+  for (m in c("Multivariable model", "Sex-adjusted model")) {
+    p <- plot_subtypes(main_results %>% filter(model == m), ba)
+    print(p)
+    tag <- if (m == "Multivariable model") "multi" else "simp"
+    save_plot(p, paste0("forestplot_", tag, "_", ba_short[ba], ".pdf"), width = 6.8, height = 2)
+  }
+}
+```
+
+## 2.2 Sensitivity analyses (Supp. Figs. 15, 21, 23, 24; Response Figs. 2, 3)
+
+Multivariable models only. Each input is written by the script named in the
+comment; skip any that have not been run.
+
+```{r}
+sensitivity_inputs <- c(
+  F                 = "combined_results_ADRD_main_F.csv",               # CoxPH_B.Rmd, fasting overnight
+  Baseline_forL     = "combined_results_ADRD_Baseline_forL.csv",        # BA_rate_L.Rmd, longitudinal subset
+  noADRDwithin5years  = "combined_results_ADRD_main_noADRDwithin5y.csv",  # CoxPH_B.Rmd, cases within 5 years excluded
+  noADRDwithin10years = "combined_results_ADRD_main_noADRDwithin10y.csv"  # CoxPH_B.Rmd, cases within 10 years excluded
+)
+
+for (tag in names(sensitivity_inputs)) {
+  f <- out_path(sensitivity_inputs[[tag]])
+  if (!file.exists(f)) { message("Skipping ", basename(f), " (not found)"); next }
+  res <- read.csv2(f) %>% filter(model == "Multivariable model")
+  for (ba in names(ba_shapes)) {
+    p <- plot_subtypes(res, ba)
+    print(p)
+    save_plot(p, paste0("forestplot_multi_", ba_short[ba], "_", tag, ".pdf"), width = 6.8, height = 2)
+  }
+}
+```
+
+# 3.0 Stratified analyses
+
+## 3.1 By baseline age (Fig. 5b, Supp. Fig. 18)
+
+```{r}
+agegroup_results <- read.csv2(out_path("combined_df_agegroup_45_main.csv")) %>%
+  mutate(group = paste0(ifelse(BA == "kdm_advance_sd", "KDMAge", "PhenoAge"), "_",
+                        ifelse(AgeGroup == "Under 45", "Under45", "Over45")))
+
+agegroup_order  <- c("ADRD_agegroup_45", "Alzheimers_agegroup_45", "Vascular_agegroup_45", "Other_agegroup_45")
+agegroup_labels <- c("ADRD_agegroup_45" = "ADRD", "Alzheimers_agegroup_45" = "AD",
+                     "Vascular_agegroup_45" = "VaD", "Other_agegroup_45" = "Other")
+agegroup_shapes <- c("KDMAge_Under45" = 21, "KDMAge_Over45" = 24,
+                     "PhenoAge_Under45" = 22, "PhenoAge_Over45" = 23)
+agegroup_shape_labels <- c("KDMAge_Over45" = "KDM ≥45", "KDMAge_Under45" = " KDM <45",
+                           "PhenoAge_Over45" = "PhenoAge ≥45", "PhenoAge_Under45" = "PhenoAge <45")
+
+for (ba in c("KDMAge", "PhenoAge")) {
+  df_ba <- agegroup_results %>%
+    filter(grepl(ba, group)) %>%
+    mutate(group = factor(group, levels = paste0(ba, c("_Under45", "_Over45"))))
+  p <- custom_forestplot(
+    df = df_ba, estimate = HR, se = se, pvalue = p, name = model, shape = group,
+    point_size = 4.4, line_size = 1.5, stroke_size = 0.5, shape_dodge = -0.5,
+    text_size = 15, axis_label_size = 12, y_axis_text_size = 15, x_axis_text_size = 12,
+    estimate_text_size = 4.5,
+    outcome_order = agegroup_order, outcome_labels = agegroup_labels,
+    shape_values = agegroup_shapes, shape_labels = agegroup_shape_labels,
+    legend_title = NULL
+  )
+  print(p)
+  save_plot(p, paste0("forestplot_multi_agegroup_", ifelse(ba == "KDMAge", "kdm", "phe"), "_45.pdf"),
+            width = 7.5, height = 3.5)
+}
+```
+
+## 3.2 By sex (Fig. 5c, Supp. Fig. 19)
+
+```{r}
+sex_results <- read.csv2(out_path("combined_sex_main.csv")) %>%
+  mutate(group = paste0(ifelse(BA == "kdm_advance_sd", "KDM", "PhenoAge"), "_", Gender))
+
+sex_order  <- c("ADRD_sex", "Alzheimers_sex", "Vascular_sex", "Other_sex")
+sex_labels <- c("ADRD_sex" = "ADRD", "Alzheimers_sex" = "AD", "Vascular_sex" = "VaD", "Other_sex" = "Other")
+
+sex_settings <- list(
+  KDM      = list(shapes = c("KDM_Men" = 21, "KDM_Women" = 24),
+                  line_size = 1.5, stroke_size = 0.5, shape_dodge = -0.5, text_size = 15, file = "kdm"),
+  PhenoAge = list(shapes = c("PhenoAge_Men" = 22, "PhenoAge_Women" = 23),
+                  line_size = 1.2, stroke_size = 0.6, shape_dodge = -0.4, text_size = 16, file = "phe")
+)
+
+for (ba in names(sex_settings)) {
+  s <- sex_settings[[ba]]
+  p <- custom_forestplot(
+    df = sex_results %>% filter(grepl(paste0("^", ba, "_"), group)),
+    estimate = HR, se = se, pvalue = p, name = model, shape = group,
+    shape_values = s$shapes,
+    shape_labels = setNames(c("Men", "Women"), names(s$shapes)),
+    point_size = 4.4, line_size = s$line_size, stroke_size = s$stroke_size,
+    shape_dodge = s$shape_dodge, text_size = s$text_size,
+    axis_label_size = 12, y_axis_text_size = 15, x_axis_text_size = 12,
+    estimate_text_size = 4.5,
+    outcome_order = sex_order, outcome_labels = sex_labels,
+    legend_title = NULL
+  )
+  print(p)
+  save_plot(p, paste0("forestplot_multi_sex_", s$file, ".pdf"), width = 7.5, height = 3.5)
+}
+```
+
+# 4.0 SveDem subanalysis (Fig. 5d, Supp. Fig. 20)
+
+ADRD cases recorded in SveDem are events; cases identified only in other
+registers are right-censored at their diagnosis date.
+
+```{r}
+svedem_results <- read.csv2(out_path("combined_results_SveDem_rightcensored.csv")) %>%
+  filter(model == "Multivariable model")
+
+svedem_order <- c("S_ADRD", "S_e_alz", "S_l_alz", "S_vas", "S_alz_vas",
+                  "S_lew", "S_fro", "S_par", "S_uns", "S_oth")
+svedem_labels <- c("S_ADRD" = "ADRD", "S_e_alz" = "EOAD", "S_l_alz" = "LOAD", "S_vas" = "VaD",
+                   "S_alz_vas" = "Mixed", "S_lew" = "LBD", "S_fro" = "FTD", "S_par" = "PDD",
+                   "S_uns" = "Unspec.", "S_oth" = "Other")
+
+for (ba in names(ba_shapes)) {
+  p <- custom_forestplot(
+    df = svedem_results %>% filter(BA == ba),
+    estimate = HR, se = se, pvalue = p, name = outcome, shape = BA,
+    shape_values = ba_shapes[ba], shape_labels = ba_labels[ba],
+    point_size = 4.5, line_size = 1.5, stroke_size = 0.5, shape_dodge = 0.5,
+    text_size = 15, axis_label_size = 12, legend_text_size = 12, estimate_text_size = 4.5,
+    outcome_order = svedem_order, outcome_labels = svedem_labels,
+    legend_title = NULL, show_legend = FALSE
+  )
+  print(p)
+  save_plot(p, paste0("forestplot_multi_sve_", ba_short[ba], "_rightcensored.pdf"), width = 7.5, height = 3.5)
+}
+```
