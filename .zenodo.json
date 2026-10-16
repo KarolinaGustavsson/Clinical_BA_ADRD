@@ -1,0 +1,50 @@
+{
+  "title": "Clinical_BA_ADRD: analysis code for \"Longitudinal biological aging and risk of dementia in a large prospective Swedish cohort\"",
+  "upload_type": "software",
+  "description": "R code for the analyses in the manuscript \"Longitudinal biological aging and risk of dementia in a large prospective Swedish cohort\": biological age (Klemera-Doubal Method and PhenoAge) from clinical biomarkers in the AMORIS cohort, Cox and Fine-Gray models for Alzheimer's disease and related dementias, and repeated-measures trajectory analyses. The underlying AMORIS data are restricted and are not included.",
+  "creators": [
+    {
+      "name": "Gustavsson, Karolina",
+      "affiliation": "Department of Medical Epidemiology and Biostatistics, Karolinska Institutet, Stockholm, Sweden"
+    },
+    {
+      "name": "Sjölander, Arvid",
+      "affiliation": "Department of Medical Epidemiology and Biostatistics, Karolinska Institutet, Stockholm, Sweden"
+    },
+    {
+      "name": "Mostafaei, Shayan",
+      "affiliation": "Department of Medical Epidemiology and Biostatistics, Karolinska Institutet, Stockholm, Sweden"
+    },
+    {
+      "name": "Mak, Jonathan K. L.",
+      "affiliation": "Department of Medical Epidemiology and Biostatistics, Karolinska Institutet, Stockholm, Sweden"
+    },
+    {
+      "name": "Religa, Dorota",
+      "affiliation": "Division of Clinical Geriatrics, Department of Neurobiology, Care Sciences and Society, Karolinska Institutet, Stockholm, Sweden"
+    },
+    {
+      "name": "Käll, Lukas",
+      "affiliation": "Department of Gene Technology, KTH Royal Institute of Technology, Stockholm, Sweden"
+    },
+    {
+      "name": "Modig, Karin",
+      "affiliation": "Institute of Environmental Medicine, Karolinska Institutet, Stockholm, Sweden"
+    },
+    {
+      "name": "Hägg, Sara",
+      "affiliation": "Department of Medical Epidemiology and Biostatistics, Karolinska Institutet, Stockholm, Sweden"
+    }
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "keywords": [
+    "biological age",
+    "dementia",
+    "Klemera-Doubal Method",
+    "PhenoAge",
+    "AMORIS",
+    "epidemiology",
+    "R"
+  ]
+}

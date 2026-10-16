@@ -189,6 +189,14 @@ The analyses were approved by the Swedish Ethical Review Authority
 
 ---
 
+## License
+
+The code is released under the [MIT License](LICENSE). The AMORIS data it
+analyses are not covered by this licence and are not included; see Data
+availability above.
+
+---
+
 ## Contact
 
 Karolina Gustavsson
