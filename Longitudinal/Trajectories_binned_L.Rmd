@@ -60,14 +60,23 @@ fit <- lm(phenoage ~ age * age_bin, data = to1po2_clean)
 coefs <- coef(fit)
 vcov_clustered <- vcovCL(fit, cluster = to1po2_clean$sampleID)
 
-# --- Step 3: Global Wald test ---
-interaction_terms <- grep("age:age_bin", names(coefs))
+# --- Step 3: Global Wald test (bins 17-82 only) ---
+# Tests whether the age slopes differ across the 13 reported bins (17-82 years).
+# Each interaction term is a bin's slope minus the reference bin's slope (17-22),
+# so 13 bins give 12 terms (df = 12). Bins above 82 years stay in the model, so
+# slopes, CIs and figures are unchanged, but they are not part of the test.
+interaction_terms <- grep("^age:age_bin", names(coefs), value = TRUE)
+interaction_terms <- interaction_terms[!is.na(coefs[interaction_terms])]
+bin_upper <- as.numeric(sub(".*,([0-9.]+)[])]$", "\\1", interaction_terms))
+interaction_terms <- interaction_terms[bin_upper <= 82]
+
 estimates <- coefs[interaction_terms]
 V <- vcov_clustered[interaction_terms, interaction_terms]
 
-wald_stat <- t(estimates) %*% solve(V) %*% estimates
+wald_stat <- as.numeric(t(estimates) %*% solve(V) %*% estimates)
 df <- length(estimates)
-p_value <- 1 - pchisq(wald_stat, df)
+p_value <- pchisq(wald_stat, df, lower.tail = FALSE)
+stopifnot(df == 12)
 
 # --- Step 4: Compute slope estimates and confidence intervals ---
 z <- 1.96
@@ -333,14 +342,23 @@ fit <- lm(kdm ~ age * age_bin, data = to1po2_clean)
 coefs <- coef(fit)
 vcov_clustered <- vcovCL(fit, cluster = to1po2_clean$sampleID)
 
-# --- Step 3: Global Wald test ---
-interaction_terms <- grep("age:age_bin", names(coefs))
+# --- Step 3: Global Wald test (bins 17-82 only) ---
+# Tests whether the age slopes differ across the 13 reported bins (17-82 years).
+# Each interaction term is a bin's slope minus the reference bin's slope (17-22),
+# so 13 bins give 12 terms (df = 12). Bins above 82 years stay in the model, so
+# slopes, CIs and figures are unchanged, but they are not part of the test.
+interaction_terms <- grep("^age:age_bin", names(coefs), value = TRUE)
+interaction_terms <- interaction_terms[!is.na(coefs[interaction_terms])]
+bin_upper <- as.numeric(sub(".*,([0-9.]+)[])]$", "\\1", interaction_terms))
+interaction_terms <- interaction_terms[bin_upper <= 82]
+
 estimates <- coefs[interaction_terms]
 V <- vcov_clustered[interaction_terms, interaction_terms]
 
-wald_stat <- t(estimates) %*% solve(V) %*% estimates
+wald_stat <- as.numeric(t(estimates) %*% solve(V) %*% estimates)
 df <- length(estimates)
-p_value <- 1 - pchisq(wald_stat, df)
+p_value <- pchisq(wald_stat, df, lower.tail = FALSE)
+stopifnot(df == 12)
 
 # --- Step 4: Compute slope estimates and confidence intervals ---
 z <- 1.96
