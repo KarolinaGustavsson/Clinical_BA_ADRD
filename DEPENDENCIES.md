@@ -16,7 +16,10 @@ on the analysis platform where the analyses were run, with
 
 The analyses were run under R 4.5.2. The analysis platform was subsequently
 updated to 4.5.3, which is the version reported by the `sessionInfo()` output in
-the appendix below; the pipeline runs unchanged under both.
+the appendix below; the pipeline runs unchanged under both. The analyses added
+in the second revision (lag analysis, restricted AD definition, delayed entry
+in the longitudinal models, sex-standardised cumulative incidence and
+Supplementary Table 15) were run under 4.5.3.
 
 Packages were installed to a project library on the analysis platform rather
 than to the default system library, because the platform has no outbound
@@ -131,7 +134,7 @@ Fine-Gray uses `survival::finegray()` and cumulative incidence uses
 `cmprsk::cuminc()` is deliberately not used — it takes only time and status, so
 it cannot express the age-based entry and exit the rest of the analysis uses.
 The reasoning is in
-[`Review/Baseline/Cumulative_incidence/README.md`](Review/Baseline/Cumulative_incidence/README.md).
+[`Baseline/Cumulative_incidence/README.md`](Baseline/Cumulative_incidence/README.md).
 
 ---
 

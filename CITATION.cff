@@ -2,6 +2,9 @@ cff-version: 1.2.0
 message: "If you use this code, please cite it as below."
 title: "Clinical_BA_ADRD: analysis code for \"Longitudinal biological aging and risk of dementia in a large prospective Swedish cohort\""
 type: software
+version: "1.1.0"
+date-released: "2026-11-27"
+doi: "10.5281/zenodo.23420920"
 license: MIT
 repository-code: "https://github.com/KarolinaGustavsson/Clinical_BA_ADRD"
 authors:
