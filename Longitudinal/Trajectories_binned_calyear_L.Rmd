@@ -7,6 +7,10 @@ date: 2026-05-14
 
 Input data: AMORIS (longitudinal) dvs results_dt från BA_rate_L.rmd
 
+Supplementary Table 15 is produced by section 5.0, which uses the current
+trajectory model (age * age_bin). Sections 2-4 are the earlier check with the
+shared-intercept specification.
+
 SENSITIVITY VERSION — reviewer comment 8 (secular assay drift 1985–1996).
 Identical to Trajectories_binned__L.Rmd except that every model is additionally
 adjusted for calendar year of measurement (derived from Provtagningsdatum), and
@@ -1140,58 +1144,58 @@ print(drift_plot)  # Send plot to file
 dev.off()  # Close device
 ```
 
-# 5.0 Calendar-year check against the current trajectory model
+# 5.0 Supplementary Table 15: current model, with and without calendar year
 
-Sections 2.1 and 2.3 above use the earlier shared-intercept specification
-(`age + age:age_bin`). The trajectories reported in Supplementary Tables 4-5
-use bin-specific intercepts (`age * age_bin`). This section refits that
-current model with and without calendar year, on identical rows, and reports
-the change in each slope for the 13 reported bins (17-82 years). This is the
-comparison quoted in the response to Reviewer 3 (comment 8).
+Recomputes the calendar-year check with the CURRENT trajectory model, as in
+Trajectories_binned_L.Rmd / Supplementary Tables 4-5: each age bin has its own
+intercept and slope (age * age_bin), fitted with and without calendar year of
+measurement (cal_year_c, linear). All six groups: KDM and PhenoAge, all / men /
+women. Run sections 0.1-0.2 and 1.1 first (0.1 must say CAL_ADJ <- "linear").
+
+NOTE: sections 2-3 of THIS script still use the old specification
+(age + age:age_bin, one shared intercept) and are not used for Table 15.
+
+Check before using the output: the unadjusted slopes must match Supplementary
+Table 4-5, e.g. KDM all 17-22: 0.4236, KDM men 17-22: 0.6796,
+KDM women 17-22: 0.3908, PhenoAge all 17-22: 0.8461.
 
 ```{r}
-library(dplyr)
-library(sandwich)
+cat("cal_term in use: '", cal_term, "'  (must be ' + cal_year_c')\n", sep = "")
 
-bin_breaks <- seq(17, ceiling(max(results_dt$age, na.rm = TRUE)), by = 5)  # same bins as the main analysis
-
-slopes_by_bin <- function(fit, vc) {
-  co <- coef(fit); bins <- levels(model.frame(fit)$age_bin)
-  out <- t(sapply(bins, function(b) {
-    term <- paste0("age:age_bin", b)
-    if (b == bins[1]) c(co["age"], sqrt(vc["age", "age"]))
-    else c(co["age"] + co[term], sqrt(vc["age", "age"] + vc[term, term] + 2 * vc["age", term]))
-  }))
-  colnames(out) <- c("slope", "se"); out
-}
-
-compare_calyear <- function(data, ba, label) {
-  d <- data %>%
-    filter(!is.na(age), !is.na(.data[[ba]]), !is.na(cal_year_c)) %>%
+slopes_with_without <- function(d_in, clock, label) {
+  d <- d_in %>%
+    filter(!is.na(age), !is.na(.data[[clock]])) %>%
     group_by(sampleID) %>% filter(n() >= 3) %>% ungroup() %>%
-    mutate(age_bin = cut(age, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
-  f0 <- lm(as.formula(paste(ba, "~ age * age_bin")), data = d)               # as in Supp. Tables 4-5
-  f1 <- lm(as.formula(paste(ba, "~ age * age_bin + cal_year_c")), data = d)  # + linear calendar year
-  s0 <- slopes_by_bin(f0, vcovCL(f0, cluster = d$sampleID))
-  s1 <- slopes_by_bin(f1, vcovCL(f1, cluster = d$sampleID))
-  keep <- as.numeric(sub(".*,([0-9.]+)[])]$", "\\1", rownames(s0))) <= 82
-  data.frame(model = label, age_bin = rownames(s0)[keep],
-             slope = round(s0[keep, "slope"], 4), slope_calyear = round(s1[keep, "slope"], 4),
-             change = round(s1[keep, "slope"] - s0[keep, "slope"], 4), row.names = NULL)
+    mutate(age_bin = cut(age, breaks = seq(17, ceiling(max(age, na.rm = TRUE)), by = 5),
+                         include.lowest = TRUE, right = FALSE))
+  f0 <- lm(as.formula(paste0(clock, " ~ age * age_bin")), data = d)
+  f1 <- lm(as.formula(paste0(clock, " ~ age * age_bin + cal_year_c")), data = d)
+  b0 <- coef(f0); b1 <- coef(f1)
+  int <- grep("^age:age_bin", names(b0), value = TRUE)
+  cat("\n==", label, "| n_obs =", nrow(d), "| n_id =", dplyr::n_distinct(d$sampleID),
+      "| missing cal_year:", sum(is.na(d$cal_year_c)), "\n")
+  print(cal_drift(f1, d$sampleID[!is.na(d$cal_year_c)], paste(label, "calendar-year coefficient")))
+  s0 <- unname(b0["age"] + c(0, b0[int])); s1 <- unname(b1["age"] + c(0, b1[int]))
+  data.frame(model = label, age_bin = levels(d$age_bin),
+             slope = round(s0, 4), slope_calyear = round(s1, 4), change = signif(s1 - s0, 3))
 }
 
-calyear_check <- bind_rows(
-  compare_calyear(results_dt,                           "kdm",      "KDM, all"),
-  compare_calyear(results_dt[results_dt$gender == 1, ], "kdm",      "KDM, men"),
-  compare_calyear(results_dt[results_dt$gender == 2, ], "kdm",      "KDM, women"),
-  compare_calyear(results_dt,                           "phenoage", "PhenoAge, all"),
-  compare_calyear(results_dt[results_dt$gender == 1, ], "phenoage", "PhenoAge, men"),
-  compare_calyear(results_dt[results_dt$gender == 2, ], "phenoage", "PhenoAge, women")
-)
+groups <- list(all = results_dt, men = to1po2_men, women = to1po2_women)
+tab15 <- do.call(rbind, lapply(c("kdm", "phenoage"), function(clock) {
+  do.call(rbind, lapply(names(groups), function(g) {
+    slopes_with_without(groups[[g]], clock,
+                        paste0(if (clock == "kdm") "KDM" else "PhenoAge", ", ", g))
+  }))
+}))
 
-print(calyear_check %>% group_by(model) %>% summarise(max_abs_change = max(abs(change))))
-cat("Largest change in any slope (17-82 years):", max(abs(calyear_check$change)), "\n")
+# Same 13 bins (17-82) as Supplementary Tables 4-5
+tab15 <- tab15[as.numeric(sub("^\\[([0-9]+),.*", "\\1", tab15$age_bin)) < 82, ]
+print(tab15, row.names = FALSE)
 
-write.table(calyear_check, out_path(paste0("calyear_check_current_model", TAG, ".csv")),
-            sep = ";", dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+cat("\nLargest |change| per group:\n")
+print(tapply(abs(tab15$change), tab15$model, max))
+cat("Largest |change| overall:", max(abs(tab15$change)), "\n")
+
+write.table(tab15, out_path("calyear_table15_current_model.csv"), sep = ";", dec = ",",
+            row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
 ```

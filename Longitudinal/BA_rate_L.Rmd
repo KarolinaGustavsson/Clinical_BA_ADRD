@@ -5,6 +5,12 @@ author: Karolina Gustavsson
 date: 2026-05-14
 ---
 
+Reported longitudinal Cox models (Supplementary Tables 10-11): section 3.6,
+with follow-up from the age of the last measurement used to estimate the slope
+and intercept (delayed entry). Sections 3.3-3.5 start follow-up at the first
+measurement (the previous version). Sensitivity analyses: 3.7 (drop-one),
+3.8 (person-mean centering), 3.9 (slope scaling); Supplementary Figs. 29-30: 3.10.
+
 Input data: AMORIS (longitudinal) from Calculating_BA_L.rmd
 
 # 1.0 Preparing
@@ -905,3 +911,442 @@ print(table9_sensitivity)
 write.table(table9_sensitivity, out_path("table9_random_drop_sensitivity_RMA.csv"), sep = ";",
             dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
 ```
+
+# 3.6 Delayed entry at the last measurement used for the slope (Reviewer 3)
+
+Inclusion requires >=3 pre-diagnosis measurements, but follow-up in 3.3 starts
+at the first measurement, so everyone is ADRD-free by construction until their
+3rd (and later) measurement. Here slope and intercept are unchanged (same
+estimates as 3.1/3.2, intercept still centred at the first measurement), but
+each person enters the risk set at the age of the last measurement used to
+estimate them. Age is the timescale, so this is left truncation:
+Surv(AgeAtEntry, AgeAtLastDate, ADRD).
+
+## 3.6.1 Entry age per individual
+```{r}
+# results_dt_filt holds exactly the measurements used in 3.1/3.2
+# (post-diagnosis rows removed, >=3 rows per person)
+entry_dt <- results_dt_filt %>%
+  group_by(sampleID) %>%
+  summarise(
+    AgeAtFirstMeas = min(age, na.rm = TRUE),
+    AgeAtEntry     = max(age, na.rm = TRUE),  # last measurement used for slope
+    n_meas         = n(),
+    .groups = "drop"
+  )
+
+results_phe_de <- results_phe_1row %>% left_join(entry_dt, by = "sampleID")
+results_kdm_de <- results_kdm_1row %>% left_join(entry_dt, by = "sampleID")
+```
+
+## 3.6.2 Who is lost by delaying entry?
+```{r}
+# Individuals whose exit (ADRD dx, death, emigration, end of follow-up) is at or
+# before their last measurement contribute no person-time after entry
+delayed_entry_summary <- function(d, label) {
+  lost <- !is.na(d$AgeAtLastDate) & d$AgeAtLastDate <= d$AgeAtEntry
+  cat(label, "\n")
+  cat("  Individuals:                              ", nrow(d), "\n")
+  cat("  ADRD events (entry at first measurement): ", sum(d$ADRD == 1, na.rm = TRUE), "\n")
+  cat("  Exit at/before entry (excluded):          ", sum(lost), "\n")
+  cat("    of which ADRD events:                   ", sum(lost & d$ADRD == 1, na.rm = TRUE), "\n")
+  cat("  Measurement window, first -> last measurement (years):\n")
+  print(summary(d$AgeAtEntry - d$AgeAtFirstMeas))
+  cat("  Follow-up after entry (years), retained individuals:\n")
+  print(summary((d$AgeAtLastDate - d$AgeAtEntry)[!lost]))
+  cat("  Follow-up from first measurement (years), original model:\n")
+  print(summary(d$AgeAtLastDate - d$AgeAtFirstDate))
+}
+
+delayed_entry_summary(results_phe_de, "PhenoAge")
+delayed_entry_summary(results_kdm_de, "KDM")
+
+# Keep individuals with person-time after entry (coxph requires stop > start)
+results_phe_de <- results_phe_de %>% filter(AgeAtLastDate > AgeAtEntry)
+results_kdm_de <- results_kdm_de %>% filter(AgeAtLastDate > AgeAtEntry)
+```
+
+## 3.6.3 Time to event modeling with delayed entry
+```{r}
+# --- PhenoAge ---
+slope_phe_de <- coxph(
+  Surv(AgeAtEntry, AgeAtLastDate, ADRD) ~ slope + intercept + gender,
+  data = results_phe_de
+)
+slope_phe_de_sum <- summary(slope_phe_de)
+slope_phe_de_sum
+cox.zph(slope_phe_de)
+
+# --- KDM ---
+slope_kdm_de <- coxph(
+  Surv(AgeAtEntry, AgeAtLastDate, ADRD) ~ slope + intercept + gender,
+  data = results_kdm_de
+)
+slope_kdm_de_sum <- summary(slope_kdm_de)
+slope_kdm_de_sum
+cox.zph(slope_kdm_de)
+```
+
+## 3.6.4 Original vs delayed entry
+```{r}
+table_delayed_entry <- rbind(
+  extract_hr_table(slope_phe_1row_sum, "PhenoAge - entry at first measurement (original)"),
+  extract_hr_table(slope_phe_de_sum,   "PhenoAge - entry at last measurement (delayed entry)"),
+  extract_hr_table(slope_kdm_1row_sum, "KDM - entry at first measurement (original)"),
+  extract_hr_table(slope_kdm_de_sum,   "KDM - entry at last measurement (delayed entry)")
+)
+
+print(table_delayed_entry)
+
+write.table(table_delayed_entry, out_path("table_delayed_entry_sensitivity_RMA.csv"), sep = ";",
+            dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+```
+
+# 3.7 Random-drop sensitivity with delayed entry
+
+Same random removals as 3.4 (same seeds, same results_dt_filt, so the same
+measurement is dropped per person), but entry is now the age of the last
+measurement remaining after the drop, i.e. the last one used for the slope.
+If the dropped measurement was the last one, entry moves to the one before.
+
+## 3.7.1 Helper
+```{r}
+fit_drop_delayed_entry <- function(seed, ba_var, label) {
+  set.seed(seed)
+
+  # Randomly drop exactly one measurement row per individual (as in 3.4)
+  d_drop <- results_dt_filt %>%
+    group_by(sampleID) %>%
+    filter(row_number() != sample(row_number(), 1)) %>%
+    ungroup()
+
+  dt <- as.data.table(d_drop)
+  dt$ba_y <- dt[[ba_var]]
+
+  # Slope/intercept on remaining measurements, plus entry age = last one used
+  slopes_dt <- dt[, if (.N >= 2) {
+    age0 <- min(age, na.rm = TRUE)
+    model <- lm(ba_y ~ I(age - age0))
+    .(slope = coef(model)[2], intercept = coef(model)[1],
+      AgeAtEntry = max(age, na.rm = TRUE))
+  }, by = sampleID]
+
+  d1 <- merge(dt, slopes_dt, by = "sampleID", all.x = FALSE, all.y = TRUE) %>%
+    distinct(sampleID, .keep_all = TRUE)
+
+  lost <- !is.na(d1$AgeAtLastDate) & d1$AgeAtLastDate <= d1$AgeAtEntry
+  counts <- data.frame(
+    Model           = label,
+    n_before        = nrow(d1),
+    events_before   = sum(d1$ADRD == 1, na.rm = TRUE),
+    n_excluded      = sum(lost),
+    events_excluded = sum(lost & d1$ADRD == 1, na.rm = TRUE)
+  )
+
+  d1 <- d1 %>% filter(AgeAtLastDate > AgeAtEntry)
+
+  fit <- coxph(Surv(AgeAtEntry, AgeAtLastDate, ADRD) ~ slope + intercept + gender,
+               data = d1)
+
+  list(sum = summary(fit), counts = counts, fit = fit, data = d1)
+}
+```
+
+## 3.7.2 Runs (PhenoAge and KDM, seeds 101 and 202)
+```{r}
+phe_drop1_de <- fit_drop_delayed_entry(101, "phenoage_advance_sd", "PhenoAge - random drop, run 1 (delayed entry)")
+phe_drop2_de <- fit_drop_delayed_entry(202, "phenoage_advance_sd", "PhenoAge - random drop, run 2 (delayed entry)")
+kdm_drop1_de <- fit_drop_delayed_entry(101, "kdm_advance_sd",      "KDM - random drop, run 1 (delayed entry)")
+kdm_drop2_de <- fit_drop_delayed_entry(202, "kdm_advance_sd",      "KDM - random drop, run 2 (delayed entry)")
+
+phe_drop1_de$sum
+phe_drop2_de$sum
+kdm_drop1_de$sum
+kdm_drop2_de$sum
+
+# Individuals/events lost because exit was at or before entry
+drop_de_counts <- rbind(phe_drop1_de$counts, phe_drop2_de$counts,
+                        kdm_drop1_de$counts, kdm_drop2_de$counts)
+print(drop_de_counts)
+```
+
+## 3.7.3 Table 9 with delayed entry
+```{r}
+table9_delayed_entry <- rbind(
+  extract_hr_table(slope_phe_de_sum,  "PhenoAge - no drop (delayed entry)"),
+  extract_hr_table(phe_drop1_de$sum,  "PhenoAge - random drop, run 1 (delayed entry)"),
+  extract_hr_table(phe_drop2_de$sum,  "PhenoAge - random drop, run 2 (delayed entry)"),
+  extract_hr_table(slope_kdm_de_sum,  "KDM - no drop (delayed entry)"),
+  extract_hr_table(kdm_drop1_de$sum,  "KDM - random drop, run 1 (delayed entry)"),
+  extract_hr_table(kdm_drop2_de$sum,  "KDM - random drop, run 2 (delayed entry)")
+)
+
+print(table9_delayed_entry)
+
+write.table(table9_delayed_entry, out_path("table9_random_drop_delayed_entry_RMA.csv"), sep = ";",
+            dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+```
+
+# 3.8 Person-mean centering (Reviewer 3)
+
+With age centred at the first measurement, the estimation errors of each
+person's intercept and slope are correlated. Centring age at the person's mean
+measurement age makes them uncorrelated. The OLS slope is identical under both
+centrings; only the intercept changes, to the level at the person's mean age
+(= the person's mean BA advance). Fitted with both entry definitions.
+
+## 3.8.1 Slopes and intercepts with person-mean centering
+```{r}
+make_pm_slopes <- function(ba_var) {
+  dt <- as.data.table(results_dt_filt)
+  dt$ba_y <- dt[[ba_var]]
+
+  slopes_dt <- dt[, if (.N >= 3) {
+    age_bar <- mean(age[!is.na(ba_y)])  # person-mean age over rows used in lm
+    model <- lm(ba_y ~ I(age - age_bar))
+    .(slope = coef(model)[2], intercept = coef(model)[1])
+  }, by = sampleID]
+
+  merge(dt, slopes_dt, by = "sampleID", all.x = FALSE, all.y = TRUE) %>%
+    distinct(sampleID, .keep_all = TRUE) %>%
+    left_join(entry_dt, by = "sampleID")
+}
+
+results_phe_pm <- make_pm_slopes("phenoage_advance_sd")
+results_kdm_pm <- make_pm_slopes("kdm_advance_sd")
+
+# Slopes should be identical to 3.1/3.2; intercepts differ
+cat("PhenoAge max |slope difference| vs first-measurement centering:",
+    max(abs(results_phe_pm$slope -
+              results_phe_1row$slope[match(results_phe_pm$sampleID, results_phe_1row$sampleID)]),
+        na.rm = TRUE), "\n")
+cat("KDM max |slope difference| vs first-measurement centering:     ",
+    max(abs(results_kdm_pm$slope -
+              results_kdm_1row$slope[match(results_kdm_pm$sampleID, results_kdm_1row$sampleID)]),
+        na.rm = TRUE), "\n")
+
+# Between-person correlation of intercept and slope under each centering
+cat("Correlation intercept-slope, PhenoAge: first-meas =",
+    round(cor(results_phe_1row$intercept, results_phe_1row$slope, use = "complete.obs"), 3),
+    "| person-mean =",
+    round(cor(results_phe_pm$intercept, results_phe_pm$slope, use = "complete.obs"), 3), "\n")
+cat("Correlation intercept-slope, KDM:      first-meas =",
+    round(cor(results_kdm_1row$intercept, results_kdm_1row$slope, use = "complete.obs"), 3),
+    "| person-mean =",
+    round(cor(results_kdm_pm$intercept, results_kdm_pm$slope, use = "complete.obs"), 3), "\n")
+```
+
+## 3.8.2 Time to event modeling
+```{r}
+# Entry at first measurement (as the original main model)
+slope_phe_pm <- coxph(Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~ slope + intercept + gender,
+                      data = results_phe_pm)
+slope_kdm_pm <- coxph(Surv(AgeAtFirstDate, AgeAtLastDate, ADRD) ~ slope + intercept + gender,
+                      data = results_kdm_pm)
+
+# Delayed entry at the last measurement used (as 3.6)
+results_phe_pm_de <- results_phe_pm %>% filter(AgeAtLastDate > AgeAtEntry)
+results_kdm_pm_de <- results_kdm_pm %>% filter(AgeAtLastDate > AgeAtEntry)
+
+slope_phe_pm_de <- coxph(Surv(AgeAtEntry, AgeAtLastDate, ADRD) ~ slope + intercept + gender,
+                         data = results_phe_pm_de)
+slope_kdm_pm_de <- coxph(Surv(AgeAtEntry, AgeAtLastDate, ADRD) ~ slope + intercept + gender,
+                         data = results_kdm_pm_de)
+
+slope_phe_pm_sum    <- summary(slope_phe_pm);    slope_phe_pm_sum
+slope_kdm_pm_sum    <- summary(slope_kdm_pm);    slope_kdm_pm_sum
+slope_phe_pm_de_sum <- summary(slope_phe_pm_de); slope_phe_pm_de_sum
+slope_kdm_pm_de_sum <- summary(slope_kdm_pm_de); slope_kdm_pm_de_sum
+```
+
+## 3.8.3 Table: first-measurement vs person-mean centering
+```{r}
+table_centering <- rbind(
+  extract_hr_table(slope_phe_1row_sum,  "PhenoAge - first-meas centering, entry first meas"),
+  extract_hr_table(slope_phe_pm_sum,    "PhenoAge - person-mean centering, entry first meas"),
+  extract_hr_table(slope_phe_de_sum,    "PhenoAge - first-meas centering, delayed entry"),
+  extract_hr_table(slope_phe_pm_de_sum, "PhenoAge - person-mean centering, delayed entry"),
+  extract_hr_table(slope_kdm_1row_sum,  "KDM - first-meas centering, entry first meas"),
+  extract_hr_table(slope_kdm_pm_sum,    "KDM - person-mean centering, entry first meas"),
+  extract_hr_table(slope_kdm_de_sum,    "KDM - first-meas centering, delayed entry"),
+  extract_hr_table(slope_kdm_pm_de_sum, "KDM - person-mean centering, delayed entry")
+)
+
+print(table_centering)
+
+write.table(table_centering, out_path("table_person_mean_centering_RMA.csv"), sep = ";",
+            dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+```
+
+# 3.9 Slope scaling check: main vs drop-one models (Reviewer 3)
+
+Reviewer 3 noted the slope SE is ~0.016-0.019 in the main models but ~0.002-0.004
+in the drop-one models. Hypothesis: after dropping a measurement many people
+have only 2 points left, often close in time, giving extreme slopes. A larger
+SD of the slope covariate shrinks the per-unit SE without any real gain in
+precision. Check the slope distribution, then compare HRs per SD.
+
+## 3.9.1 Slope distribution and measurement span
+```{r}
+slope_dist <- function(d, label) {
+  data.frame(
+    Model          = label,
+    n              = sum(!is.na(d$slope)),
+    sd_slope       = sd(d$slope, na.rm = TRUE),
+    p01_slope      = quantile(d$slope, 0.01, na.rm = TRUE),
+    median_slope   = median(d$slope, na.rm = TRUE),
+    p99_slope      = quantile(d$slope, 0.99, na.rm = TRUE),
+    sd_intercept   = sd(d$intercept, na.rm = TRUE),
+    row.names = NULL
+  )
+}
+
+table_slope_dist <- rbind(
+  slope_dist(results_phe_1row,       "PhenoAge - main"),
+  slope_dist(results_phe_drop1,      "PhenoAge - drop run 1"),
+  slope_dist(results_phe_drop2,      "PhenoAge - drop run 2"),
+  slope_dist(results_kdm_1row,       "KDM - main"),
+  slope_dist(results_kdm_drop1,      "KDM - drop run 1"),
+  slope_dist(results_kdm_drop2,      "KDM - drop run 2")
+)
+print(table_slope_dist)
+
+# Span of the measurements left after the drop (years), and how many have 2 points
+span_after_drop <- function(seed) {
+  set.seed(seed)
+  results_dt_filt %>%
+    group_by(sampleID) %>%
+    filter(row_number() != sample(row_number(), 1)) %>%
+    summarise(n_left = n(), span = max(age) - min(age), .groups = "drop")
+}
+for (s in c(101, 202)) {
+  sp <- span_after_drop(s)
+  cat("Seed", s, "- individuals with only 2 measurements left:", sum(sp$n_left == 2), "\n")
+  cat("  Span (years) among those with 2 left:\n"); print(summary(sp$span[sp$n_left == 2]))
+}
+cat("Span (years) in main data:\n")
+print(summary(entry_dt$AgeAtEntry - entry_dt$AgeAtFirstMeas))
+```
+
+## 3.9.2 HRs per SD of slope and intercept
+```{r}
+# HR per SD = exp(beta * SD), SD taken in the sample the model was fitted on
+per_sd_rows <- function(fit, data, label) {
+  s  <- summary(fit)$coefficients
+  cc <- data[complete.cases(data[, c("slope", "intercept", "gender", "ADRD", "AgeAtLastDate")]), ]
+  do.call(rbind, lapply(c("slope", "intercept"), function(v) {
+    sdv <- sd(cc[[v]])
+    b   <- s[v, "coef"]
+    se  <- s[v, "se(coef)"]
+    data.frame(
+      Model     = label,
+      term      = v,
+      SD        = sdv,
+      beta      = b,
+      se        = se,
+      HR_per_SD = exp(b * sdv),
+      CI_lower  = exp((b - 1.96 * se) * sdv),
+      CI_upper  = exp((b + 1.96 * se) * sdv),
+      p         = s[v, "Pr(>|z|)"],
+      row.names = NULL
+    )
+  }))
+}
+
+table_per_sd <- rbind(
+  per_sd_rows(slope_phe_1row,      results_phe_1row,      "PhenoAge - main, entry first meas"),
+  per_sd_rows(slope_phe_drop1,     results_phe_drop1,     "PhenoAge - drop run 1, entry first meas"),
+  per_sd_rows(slope_phe_drop2,     results_phe_drop2,     "PhenoAge - drop run 2, entry first meas"),
+  per_sd_rows(slope_phe_de,        results_phe_de,        "PhenoAge - main, delayed entry"),
+  per_sd_rows(phe_drop1_de$fit,    phe_drop1_de$data,     "PhenoAge - drop run 1, delayed entry"),
+  per_sd_rows(phe_drop2_de$fit,    phe_drop2_de$data,     "PhenoAge - drop run 2, delayed entry"),
+  per_sd_rows(slope_phe_pm,        results_phe_pm,        "PhenoAge - person-mean, entry first meas"),
+  per_sd_rows(slope_phe_pm_de,     results_phe_pm_de,     "PhenoAge - person-mean, delayed entry"),
+  per_sd_rows(slope_kdm_1row,      results_kdm_1row,      "KDM - main, entry first meas"),
+  per_sd_rows(slope_kdm_drop1,     results_kdm_drop1,     "KDM - drop run 1, entry first meas"),
+  per_sd_rows(slope_kdm_drop2,     results_kdm_drop2,     "KDM - drop run 2, entry first meas"),
+  per_sd_rows(slope_kdm_de,        results_kdm_de,        "KDM - main, delayed entry"),
+  per_sd_rows(kdm_drop1_de$fit,    kdm_drop1_de$data,     "KDM - drop run 1, delayed entry"),
+  per_sd_rows(kdm_drop2_de$fit,    kdm_drop2_de$data,     "KDM - drop run 2, delayed entry"),
+  per_sd_rows(slope_kdm_pm,        results_kdm_pm,        "KDM - person-mean, entry first meas"),
+  per_sd_rows(slope_kdm_pm_de,     results_kdm_pm_de,     "KDM - person-mean, delayed entry")
+)
+
+print(table_per_sd)
+
+write.table(table_per_sd, out_path("table_slope_intercept_per_SD_RMA.csv"), sep = ";",
+            dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+```
+
+# 3.10 Baseline Cox in the longitudinal subset with delayed entry (Supplementary Figs. 29-30)
+
+Same models as section 2 (baseline KDM/PhenoAge age gap at the first
+measurement; sex-adjusted and multivariable; ADRD and subtypes), but in the
+same analytic set as the slope/intercept models: post-diagnosis measurements
+removed, >=3 pre-diagnosis measurements (results_dt_filt), and delayed entry
+at the age of the last measurement (AgeAtEntry from 3.6.1).
+
+## 3.10.1 Analytic set
+```{r}
+results_df_de <- results_dt_filt %>%
+  group_by(sampleID) %>%
+  slice_min(order_by = age, n = 1, with_ties = FALSE) %>%   # exposure at first measurement
+  ungroup() %>%
+  left_join(entry_dt %>% dplyr::select(sampleID, AgeAtEntry), by = "sampleID")
+
+cat("Individuals in longitudinal subset (one row each):", nrow(results_df_de), "\n")
+cat("Exit at/before entry (excluded):                   ",
+    sum(results_df_de$AgeAtLastDate <= results_df_de$AgeAtEntry, na.rm = TRUE), "\n")
+
+results_df_de <- results_df_de %>% filter(AgeAtLastDate > AgeAtEntry)
+
+cat("Individuals analysed:", nrow(results_df_de), "\n")
+cat("Events - ADRD:", sum(results_df_de$ADRD == 1, na.rm = TRUE),
+    "| AD:", sum(results_df_de$Alzheimers == 1, na.rm = TRUE),
+    "| VaD:", sum(results_df_de$Vascular == 1, na.rm = TRUE),
+    "| Other:", sum(results_df_de$Other == 1, na.rm = TRUE), "\n")
+
+# s.d. of the age gap in years in this set (for the figure legends)
+sapply(results_df_de[c("kdm_advance", "phenoage_advance")], sd, na.rm = TRUE)
+```
+
+## 3.10.2 Models (same layout as combined_results in 2.5)
+```{r}
+BA_measures <- c("kdm_advance_sd", "phenoage_advance_sd")
+outcomes    <- c("Alzheimers", "ADRD", "Other", "Vascular")  # same order as 2.5
+
+fit_baseline_de <- function(outcome) {
+  HR_BA <- data.frame(
+    BA = rep(BA_measures, each = 2),
+    outcome = rep(outcome, times = length(BA_measures) * 2),
+    model = rep(c("Sex-adjusted model", "Multivariable model"), times = length(BA_measures)),
+    beta = NA, se = NA, HR = NA, CI_lower = NA, CI_upper = NA, p = NA, p_PH_BA = NA, global_p_PH_BA = NA,
+    concordance = NA, N = NA, events = NA, std_beta = NA
+  )
+  covs <- c("+ gender", "+ gender + income_bins + NewUtbNiva")
+  for (j in seq_along(BA_measures)) {
+    for (k in 1:2) {
+      fit <- coxph(as.formula(paste0("Surv(AgeAtEntry, AgeAtLastDate, ", outcome, ") ~ ",
+                                     BA_measures[j], " ", covs[k])), data = results_df_de)
+      s <- summary(fit)
+      i <- (j - 1) * 2 + k
+      HR_BA[i, c(4, 5, 9, 12)] <- c(s$coefficients[1, c(1, 3, 5)], s$concordance[1])
+      HR_BA[i, c("HR", "CI_lower", "CI_upper")] <- s$conf.int[1, c(1, 3, 4)]
+      HR_BA[i, 10] <- cox.zph(fit)$table[1, 3]
+      HR_BA[i, 11] <- cox.zph(fit)$table["GLOBAL", "p"]
+      HR_BA[i, "N"] <- s$n
+      HR_BA[i, "events"] <- fit$nevent
+      HR_BA[i, "std_beta"] <- calc_standardized_beta(fit, results_df_de, BA_measures[j])
+    }
+  }
+  HR_BA
+}
+
+combined_results_de <- do.call(rbind, lapply(outcomes, fit_baseline_de))
+print(combined_results_de)
+
+write.table(combined_results_de, out_path("combined_results_ADRD_Baseline_forL_delayed_entry.csv"), sep = ";",
+            dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+```
+
+
