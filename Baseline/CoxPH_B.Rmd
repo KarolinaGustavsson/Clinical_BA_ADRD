@@ -215,26 +215,6 @@ calc_standardized_beta <- function(model, data, covariate) {
 }
 ```
 
-## 1.7 Optional sensitivity analysis: removing ADRD cases within 5/10 years of blood sample
-```{r}
-# Sensitivity dataset: exclude ADRD cases within 10 years of AgeAtFirstDate
-to1po2_10 <- to1po2 %>%
-  filter(!(ADRD == 1 & (AgeAtLastDate - AgeAtFirstDate) < 10))
-
-# Sensitivity dataset: exclude ADRD cases within 5 years of AgeAtFirstDate
-to1po2_5 <- to1po2 %>%
-  filter(!(ADRD == 1 & (AgeAtLastDate - AgeAtFirstDate) < 5))
-
-nrow(to1po2)
-nrow(to1po2_5)
-nrow(to1po2_10)
-
-# Number of rows removed at each cutoff
-n_removed_10 <- nrow(to1po2) - nrow(to1po2_10) #3528
-n_removed_5  <- nrow(to1po2) - nrow(to1po2_5) #1615
-```
-
-
 # 2.0 Time to evenet analysis: main
 
 ## 2.1 ADRD
@@ -334,6 +314,64 @@ Alzh_results <- HR_BA
 
 # Print the modified HR_BA_adrd data frame
 print(HR_BA)
+```
+
+### 2.2.1 Restricted AD definition (AD*)
+Requested by Reviewer 3 (round 2, comment 3): AD without mixed dementia or medication-only cases (Supplementary Figs. 18-19)
+```{r}
+# AD-specific ICD-10 codes only (pre-ICD-10 codes removed).
+# Mixed dementia excluded: SveDem S_alz_vas and ICD-10 F00.2.
+# ATC-only cases are not counted as AD (follow-up ends at drug date = censored).
+# SveDem takes priority: individuals in SveDem are classified by SveDem only.
+# G30.8 is excluded: it is often recorded together with F00.2 for mixed dementia.
+
+alzheimers_s_codes <- c("G309", "G301", "F009", "G300", "F001", "F000", "F00", "G30")
+
+make_ad_sens <- function(codes) {
+  ifelse(
+    to1po2$S_ADRD == 1,
+    as.numeric(to1po2$S_e_alz == 1 | to1po2$S_l_alz == 1),
+    as.numeric(to1po2$Dementia %in% codes)
+  )
+}
+
+to1po2$Alzheimers_s_withoutG308 <- make_ad_sens(alzheimers_s_codes)
+
+# Cases removed relative to the main AD definition
+table(main = to1po2$Alzheimers, sensitivity = to1po2$Alzheimers_s_withoutG308)
+cat("AD cases - main:", sum(to1po2$Alzheimers == 1, na.rm = TRUE),
+    "| restricted:", sum(to1po2$Alzheimers_s_withoutG308 == 1), "\n")
+```
+
+```{r}
+for (ad_var in "Alzheimers_s_withoutG308") {
+  HR_BA <- data.frame(
+    BA = rep(BA_measures, each = 2),
+    outcome = rep(ad_var, times = length(BA_measures) * 2),
+    model = rep(c("Sex-adjusted model", "Multivariable model"), times = length(BA_measures)),
+    beta = NA, se = NA, HR = NA, CI_lower = NA, CI_upper = NA, p = NA, p_PH_BA = NA, global_p_PH_BA = NA,
+    concordance = NA, N = NA, events = NA, std_beta = NA
+  )
+  covs <- c("+ gender", "+ gender + income_bins + NewUtbNiva")
+  for (j in seq_along(BA_measures)) {
+    for (k in 1:2) {
+      # same timescale and covariates as the main AD model
+      fit <- coxph(as.formula(paste0("Surv(AgeAtFirstDate, AgeAtLastDate, ", ad_var, ") ~ ",
+                                     BA_measures[j], " ", covs[k])), data = to1po2)
+      s <- summary(fit); i <- (j - 1) * 2 + k
+      HR_BA[i, c(4, 5, 9, 12)] <- c(s$coefficients[1, c(1, 3, 5)], s$concordance[1])
+      HR_BA[i, c("HR", "CI_lower", "CI_upper")] <- s$conf.int[1, c(1, 3, 4)]
+      HR_BA[i, 10] <- cox.zph(fit)$table[1, 3]
+      HR_BA[i, 11] <- cox.zph(fit)$table["GLOBAL", "p"]
+      HR_BA[i, "N"] <- s$n
+      HR_BA[i, "events"] <- fit$nevent
+      HR_BA[i, "std_beta"] <- calc_standardized_beta(fit, to1po2, BA_measures[j])
+    }
+  }
+  print(HR_BA)
+  write.table(HR_BA, out_path(paste0("combined_results_", ad_var, ".csv")), sep = ";", dec = ",",
+              row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+}
 ```
 
 ## 2.3 Vascular

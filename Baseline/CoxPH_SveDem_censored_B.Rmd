@@ -215,26 +215,6 @@ calc_standardized_beta <- function(model, data, covariate) {
 }
 ```
 
-## 1.7 Optional sensitivity analysis: removing ADRD cases within 5/10 years of blood sample
-```{r}
-# Sensitivity dataset: exclude ADRD cases within 10 years of AgeAtFirstDate
-to1po2_10 <- to1po2 %>%
-  filter(!(ADRD == 1 & (AgeAtLastDate - AgeAtFirstDate) < 10))
-
-# Sensitivity dataset: exclude ADRD cases within 5 years of AgeAtFirstDate
-to1po2_5 <- to1po2 %>%
-  filter(!(ADRD == 1 & (AgeAtLastDate - AgeAtFirstDate) < 5))
-
-nrow(to1po2)
-nrow(to1po2_5)
-nrow(to1po2_10)
-
-# Number of rows removed at each cutoff
-n_removed_10 <- nrow(to1po2) - nrow(to1po2_10) #3528
-n_removed_5  <- nrow(to1po2) - nrow(to1po2_5) #1615
-```
-
-
 # 2.0 Time to evenet analysis: main
 
 ## 2.1 ADRD
