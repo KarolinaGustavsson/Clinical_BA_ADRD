@@ -8,6 +8,48 @@ Adapted from the cancer side project's Fine-Gray scripts.
 
 ---
 
+## Supplementary Figs. 26–27: sex-standardised cumulative incidence
+
+This folder produces the cumulative incidence curves in Supplementary
+Figs. 26–27: Aalen-Johansen cumulative incidence of ADRD and of death from age
+65, by biological age group, with death as a competing event.
+
+`cif_sexstd_project1.R` estimates the curves separately in men and women and
+standardises them to the sex distribution of the analysed sample, so the two
+biological age groups are compared at the same sex composition:
+
+```
+CIF_std(group, t) = sum over sex s of  w_s * CIF(group, sex s, t)
+```
+
+with `w_s` the share of sex `s` in the analysed sample (both groups combined), and variance
+`sum w_s^2 se_s^2`, since the sexes are independent samples. Each sex-specific
+curve is the same estimator as the unstandardised `cif` mode of
+`fg_project1.R`, so with one sex the result equals the unstandardised curve.
+
+```
+Rscript test_fg_project1.R               # must end with "All good."
+Rscript cif_sexstd_project1.R sex        # -> ./sexstd/
+Rscript plot_cif_results.R sexstd        # figures + README into ./sexstd/
+```
+
+The script also has an `mv` mode, which standardises to sex, income quartile
+and education with a model-based (g-formula) approach. It was run as a check
+and is not reported.
+
+`fg_project1.R` here is a later version of the script in
+[`../Fine_Gray`](../Fine_Gray): it adds the `cif` mode and keeps the earlier
+`main`, `svedem` and `inspect` modes. **The published Fine-Gray
+subdistribution hazard ratios in Supplementary Table 9 were produced by the
+earlier script**, `../Fine_Gray/fg_project1_ADRD.R`, and the `cif` mode never
+calls `finegray()`, so running it cannot move those numbers. Both versions are
+kept so that each published result can be traced to the code that produced
+it.
+
+The rest of this file documents `fg_project1.R`.
+
+---
+
 ## Running it on the secure analysis platform
 
 Put these three files in a folder together with `coxph_B_correctsubtypes.RData`:
@@ -334,6 +376,8 @@ level backwards would reverse the figure without erroring.
 | `fg_project1.R` | Everything: config, timeline derivation, cleaning, expansion, fitting, resume logic, plus the `main` / `svedem` / `inspect` / `cif` run modes |
 | `test_fg_project1.R` | 136 checks on synthetic data; `source()`s `fg_project1.R` without triggering a real run |
 | `table1_kdmgroups_baseline_perID.csv` | Input for the `cif` mode only — Table 1's biological age groups, per ID |
+| `cif_sexstd_project1.R` | Sex-standardised cumulative incidence (Supplementary Figs. 26–27); sources `fg_project1.R` |
+| `plot_cif_results.R` | Figures from the saved curves (`sexstd` or the unstandardised run) |
 | `run_fg_project1.ps1` | Optional: one process per outcome, maximum memory safety (Windows) |
 | `fine_gray_competing_risk_project1_attained_age_with_tests.Rmd` | Optional interactive notebook: same checks plus an expansion-size probe. Not needed to run the analysis - the terminal is the preferred path either way. |
 

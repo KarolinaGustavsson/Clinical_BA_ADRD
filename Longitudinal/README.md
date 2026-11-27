@@ -62,14 +62,30 @@ the slope is the change in biological age per year of chronological age.
 
 **Survival models.** Fit Cox models with slope and intercept entered jointly,
 adjusted for sex, with ADRD as the outcome and chronological age as the
-timescale. **Section 3.3 collapses to one row per individual before fitting,
-and that is what the manuscript reports** — see the note below.
+timescale, on one row per individual (section 3.3; see the note below).
+**The reported models (section 3.6) start follow-up at the age of the last
+measurement used to estimate the slope and intercept** (delayed entry), so no
+person-time is counted while the exposure is still being measured. The 27
+individuals with no follow-up after that measurement (none with ADRD) are
+excluded, leaving 44,778 individuals and 5,564 ADRD events. Sections 3.3–3.5
+keep the previous version, with follow-up from the first measurement.
 
-**Sensitivity.** Randomly remove one measurement per individual, re-estimate
-the slopes and intercepts, and refit; repeated twice, for both KDM and
-PhenoAge (Supplementary Tables 10–11).
+**Sensitivity** (Supplementary Tables 10–11). Randomly remove one measurement
+per individual, re-estimate the slopes and intercepts, and refit with entry at
+the last remaining measurement; repeated twice, for both KDM and PhenoAge
+(section 3.7). Person-mean centering, which makes the estimation errors of the
+intercept and slope uncorrelated (section 3.8). Section 3.9 checks the scale
+of the slope in the drop-one models.
 
-**Outputs:** `combined_results_ADRD_Baseline_forL.csv`,
+**Baseline models in the longitudinal subset** (section 3.10, Supplementary
+Figs. 29–30): the Fig. 5a models refitted in the subset, with the same delayed
+entry.
+
+**Outputs:** `table_delayed_entry_sensitivity_RMA.csv`,
+`table9_random_drop_delayed_entry_RMA.csv`,
+`table_person_mean_centering_RMA.csv`, `table_slope_intercept_per_SD_RMA.csv`,
+`combined_results_ADRD_Baseline_forL_delayed_entry.csv`, and from the
+previous version `combined_results_ADRD_Baseline_forL.csv`,
 `table9_random_drop_sensitivity_RMA.csv`, `bioage_scale_df_table_RMA.csv`.
 
 ---
@@ -112,6 +128,21 @@ trajectory figures.
 
 **Outputs:** `GAM_ci_per5year.csv` (fitted values and intervals at 5-year
 landmark ages), spaghetti and density figures.
+
+---
+
+### 6. `Trajectories_binned_calyear_L.Rmd` — calendar year of measurement
+
+Could secular assay drift between 1985 and 1996 be mistaken for within-person
+aging? Section 5.0 fits the trajectory model of script 4
+(`age * age_bin`) with and without a linear term for calendar year of
+measurement, on identical rows, for KDM and PhenoAge in all, men and women,
+and reports the change in each slope over the 13 reported bins
+(Supplementary Table 15; largest change 0.009). Run sections 0.1–0.2 and 1.1
+first. Sections 2–4 are an earlier version of the check with a shared
+intercept across bins and are not used for the table.
+
+**Outputs:** `calyear_table15_current_model.csv`.
 
 ---
 
@@ -182,4 +213,5 @@ Baseline analysis
      BA_rate_L.Rmd               30-45 min  (per-individual fits + Cox models)
      Trajectories_binned_L.Rmd   15-20 min
      Trajectories_GAM_L.Rmd      10-15 min
+     Trajectories_binned_calyear_L.Rmd  10-15 min
 ```

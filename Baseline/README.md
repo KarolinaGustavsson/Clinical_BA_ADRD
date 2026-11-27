@@ -14,7 +14,7 @@ location. Outputs are written under `OUTPUT_DIR` (`./output` unless
 
 ## Workflow
 
-Run in this order. Scripts 3–7 all need the objects script 2 leaves in the
+Run in this order. Scripts 3–8 all need the objects script 2 leaves in the
 session, and 4–7 need the outcome definitions from script 3.
 
 ### 1. `Selecting_biomarkers_B.Rmd` — biomarker screening
@@ -68,12 +68,16 @@ it cannot be skipped.
   chronological age as the underlying timescale
 - Test the proportional hazards assumption with `cox.zph()`
 - Sensitivity analyses: restricted to fasting individuals; with sampling date
-  added as a covariate; and with ADRD cases occurring within 5 or 10 years of
-  baseline excluded (`to1po2_5`, `to1po2_10`)
+  added as a covariate; and with a restricted AD definition (AD*, section
+  2.2.1): early- and late-onset AD in SveDem and AD-specific ICD-10 codes
+  outside SveDem (F00 and G30, excluding F00.2 and G30.8), with mixed dementia,
+  medication-only and pre-ICD-10 cases censored at diagnosis
+  (Supplementary Figs. 18–19)
 
 **Outputs:** `combined_results_ADRD_main.csv` (main models;
 `combined_results_ADRD_main_sens_provtagningsdatum.csv` when sampling date is
 added for the sensitivity analysis),
+`combined_results_Alzheimers_s_withoutG308.csv` (AD*),
 `combined_results_SveDem_main.csv`.
 
 ---
@@ -136,10 +140,46 @@ modelling choices and the fallbacks if memory runs out.
 
 ---
 
-### 8. `Forest_plots_B.Rmd` — forest plots
+### 8. `CoxPH_lag_B.Rmd` — lag analysis
 
-Draws the forest plots in Fig. 5 and Supplementary Figs. 14–21 and 23–24
-from the results tables written by scripts 3–5 and by
+The Fig. 5a models with follow-up starting 5 or 10 years after baseline, to
+reduce the influence of preclinical disease. Everyone alive, free of ADRD and
+under follow-up at that point enters the risk set at baseline age plus the lag
+(delayed entry, age as timescale), so no one is excluded on the basis of a
+later event. Section 1 repeats the data preparation of `CoxPH_B.Rmd`; a lag of
+0 is fitted as a check and must reproduce `combined_results_ADRD_main.csv`
+exactly. The 10-year lag is Supplementary Figs. 16–17.
+
+**Outputs:** `combined_results_ADRD_main_lag5y.csv`,
+`combined_results_ADRD_main_lag10y.csv`, `lag_counts_N_events.csv`.
+
+---
+
+### 9. `Cumulative_incidence/` — absolute risk with death as a competing event
+
+Aalen-Johansen cumulative incidence of ADRD and of death from age 65,
+by biological age group (the median split from `Table1_B.Rmd`), on the same
+analytic sample, event definitions and age timescale as the Cox and Fine-Gray
+models. `cif_sexstd_project1.R` estimates the curves separately in men and
+women and standardises them to the sex distribution of the sample
+(Supplementary Figs. 26–27):
+
+```
+Rscript cif_sexstd_project1.R sex      # sex-standardised curves -> ./sexstd/
+Rscript plot_cif_results.R sexstd      # figures from the saved curves
+```
+
+`fg_project1.R` in this folder is a later version of the script in
+`Fine_Gray/`; its `cif` mode gives the unstandardised curves. The published
+Supplementary Table 9 was produced by `Fine_Gray/fg_project1_ADRD.R`. See
+[`Cumulative_incidence/README.md`](Cumulative_incidence/README.md).
+
+---
+
+### 10. `Forest_plots_B.Rmd` — forest plots
+
+Draws the forest plots in Fig. 5 and Supplementary Figs. 14–25 and 29–30
+from the results tables written by scripts 3–5 and 8 and by
 `Longitudinal/BA_rate_L.Rmd`, so run it after that script.
 A table at the top of the notebook maps each figure to its input file.
 

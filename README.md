@@ -1,6 +1,6 @@
 # Longitudinal Biological Aging and Risk of Dementia in a Large Prospective Swedish Cohort
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23420921.svg)](https://doi.org/10.5281/zenodo.23420921)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23420920.svg)](https://doi.org/10.5281/zenodo.23420920)
 
 R code for the analyses in the manuscript. The analysis examines both
 **baseline biological age** and the **rate of change in biological age** as
@@ -106,8 +106,10 @@ Clinical_BA_ADRD/
 │   ├── CoxPH_SveDem_censored_B.Rmd    # adjudicated SveDem subanalysis
 │   ├── CoxPH_subgroups_B.Rmd          # age- and sex-stratified models
 │   ├── Table1_B.Rmd                   # Table 1, biological age groups
-│   ├── Forest_plots_B.Rmd             # forest plots (Fig. 5, Supp. Figs. 14–21, 23–24)
-│   └── Fine_Gray/                     # competing risks (Supp. Table 9)
+│   ├── CoxPH_lag_B.Rmd                # 10-year lag analysis (Supp. Figs. 16–17)
+│   ├── Forest_plots_B.Rmd             # forest plots (Fig. 5, Supp. Figs. 14–25, 29–30)
+│   ├── Fine_Gray/                     # competing risks (Supp. Table 9)
+│   └── Cumulative_incidence/          # absolute risk, competing death (Supp. Figs. 26–27)
 │
 ├── Longitudinal/                      # repeated-measures analysis
 │   ├── README.md
@@ -115,12 +117,12 @@ Clinical_BA_ADRD/
 │   ├── Table1_L.Rmd                   # repeated-measures descriptives
 │   ├── BA_rate_L.Rmd                  # intercept vs. rate of change
 │   ├── Trajectories_binned_L.Rmd      # 5-year age-bin trajectories
-│   └── Trajectories_GAM_L.Rmd         # smooth trajectories
+│   ├── Trajectories_GAM_L.Rmd         # smooth trajectories
+│   └── Trajectories_binned_calyear_L.Rmd  # calendar-year adjustment (Supp. Table 15)
 │
 └── Review/                            # analyses cited in the response to
     ├── README.md                      #   reviewers only, not in the paper
-    ├── Baseline/Cumulative_incidence/  # absolute risk, competing events
-    └── Longitudinal/                  # calendar-year adjustment, inclusion checks
+    └── Longitudinal/                  # inclusion checks
 ```
 
 ---
@@ -214,12 +216,17 @@ Gustavsson K, Sjölander A, Mostafaei S, Mak JKL, Religa D, Käll L, Modig K,
 Hägg S. *Longitudinal biological aging and risk of dementia in a large
 prospective Swedish cohort*. Manuscript under review, 2026.
 
-The version of the code used for the revised manuscript is archived at Zenodo:
+The code is archived at Zenodo. The concept DOI
+https://doi.org/10.5281/zenodo.23420920 always resolves to the latest archived
+version:
 
 Gustavsson K, Sjölander A, Mostafaei S, Mak JKL, Religa D, Käll L, Modig K,
-Hägg S. *Clinical_BA_ADRD* (v1.0.0). Zenodo, 2026.
-https://doi.org/10.5281/zenodo.23420921
+Hägg S. *Clinical_BA_ADRD*. Zenodo, 2026.
+https://doi.org/10.5281/zenodo.23420920
 
-The concept DOI https://doi.org/10.5281/zenodo.23420920 always resolves to the
-latest archived version. A formal citation of the article will be added on
-publication.
+| Version | Manuscript version | DOI |
+|---|---|---|
+| v1.1.0 | second revision | see the Zenodo record |
+| v1.0.0 | first revision | https://doi.org/10.5281/zenodo.23420921 |
+
+A formal citation of the article will be added on publication.

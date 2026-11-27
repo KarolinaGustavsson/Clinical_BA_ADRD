@@ -1,0 +1,326 @@
+---
+title: "CoxPH_lag_B"
+output: html_notebook
+author: Karolina Gustavsson
+date: 2026-11-22
+---
+
+Input data: to1po2 from Calculating_BA.rmd
+Covariates: sex, education level, income quartiles
+
+Lag analysis for Supplementary Figs. 16-17 (Reviewer 3, comment 7).
+Section 1 is the same data preparation as in CoxPH_B.Rmd; section 2 fits the
+Fig. 5a models with follow-up starting 5 or 10 years after baseline.
+
+# 1.0 Preparing variables
+
+## 1.1 Linking SveDem 
+```{r}
+# Paths, output locations and analysis parameters come from config.R in the
+# repository root. Nothing below hardcodes a location.
+source(here::here("config.R"))
+
+SveDem <- read_sas(PATH_SVEDEM)
+```
+
+```{r}
+#ADRD categories
+to1po2$S_ADRD <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] %in% c(1,2,3,4,5,6,7,8,9), 1, 0) #1-9
+to1po2$S_e_alz <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 1, 1, 0) #1
+to1po2$S_l_alz <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 2, 1, 0) #2
+to1po2$S_alz_vas <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 3, 1, 0) #3
+to1po2$S_vas <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 4, 1, 0) #4
+to1po2$S_lew <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 5, 1, 0) #5
+to1po2$S_fro <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 6, 1, 0) #6
+to1po2$S_par <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 7, 1, 0) #7
+to1po2$S_uns <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 8, 1, 0) #8 
+to1po2$S_oth <- ifelse(to1po2$sampleID %in% SveDem$Id & SveDem$DIAGNOSIS_BR[match(to1po2$sampleID, SveDem$Id)] == 9, 1, 0) #9  
+
+# Create the new column by matching sampleID from to1po2 to Id in SveDem
+to1po2$S_INDATUM <- SveDem$DIAGNOSIS_DATE_BR[match(to1po2$sampleID, SveDem$Id)]
+
+# ICD codes for the ones not in SveDem
+alzheimers_codes <- c(
+  "G308", "G309", "G301", "F009", "F002", "G300", "F001", "F000",
+  "290,1", "304", "290", "290A", "F00", "305", "290B", "G30", "311A"
+)
+
+vascular_codes <- c(
+  "293", "290E", "F01", "293,1", "F019", "F012", "F018",
+  "F013", "F011", "F010", "F0180", "F0183"
+)
+
+other_codes <- c(
+  "F039", "F23", "F020", "F024", "F028", "F022", "F03-p", "F021", "F023", "F03-P",
+  "290,0", "293,9", "293,2", "293,5", "293,3", "293,4", "F0013", "F0010",
+  "306", "290X", "F02", "290W", "F03", "294B", "G311",
+  "311B", "G318A", "311C", "F051", "311X"
+)
+
+all_codes <- unique(c(alzheimers_codes, vascular_codes, other_codes))
+
+#Then we make an overall category
+to1po2$ADRD <- ifelse(
+  (to1po2$Dementia != "" & !is.na(to1po2$Dementia)) |
+  (to1po2$ATC != "" & !is.na(to1po2$ATC)) |
+  (to1po2$S_ADRD == 1),
+  1,
+  0
+)
+
+# Prioritize SveDem info, fallback to Dementia codes
+to1po2$Alzheimers <- ifelse(
+  to1po2$S_l_alz == 1 | to1po2$S_e_alz == 1 | to1po2$S_alz_vas == 1,
+  1,
+  ifelse(to1po2$Dementia %in% alzheimers_codes, 1, 0)
+)
+
+to1po2$Vascular <- ifelse(
+  to1po2$S_vas == 1,
+  1,
+  ifelse(to1po2$Dementia %in% vascular_codes, 1, 0)
+)
+
+to1po2$Other <- ifelse(
+  to1po2$S_oth == 1 | to1po2$S_uns == 1 | to1po2$S_par == 1 | to1po2$S_fro == 1 | to1po2$S_lew == 1,
+  1,
+  ifelse(to1po2$Dementia %in% other_codes, 1, 0)
+)
+
+```
+
+NEW 
+```{r}
+cat("nrow before subtype chunk:", nrow(to1po2), "\n")
+cat("sum ADRD before subtype chunk:", sum(to1po2$ADRD, na.rm=TRUE), "\n")
+
+to1po2$subtype <- with(to1po2, ifelse(
+  S_l_alz==1 | S_e_alz==1 | S_alz_vas==1, "Alzheimers",
+  ifelse(S_vas==1, "Vascular",
+  ifelse(S_oth==1 | S_uns==1 | S_par==1 | S_fro==1 | S_lew==1, "Other",
+  ifelse(Dementia %in% alzheimers_codes, "Alzheimers",
+  ifelse(Dementia %in% vascular_codes, "Vascular",
+  ifelse(Dementia %in% other_codes, "Other",
+  ifelse(ATC != "" & Dementia == "" & S_ADRD == 0, "Alzheimers", NA))))))
+))
+
+to1po2$Alzheimers <- as.numeric(!is.na(to1po2$subtype) & to1po2$subtype == "Alzheimers")
+to1po2$Vascular   <- as.numeric(!is.na(to1po2$subtype) & to1po2$subtype == "Vascular")
+to1po2$Other      <- as.numeric(!is.na(to1po2$subtype) & to1po2$subtype == "Other")
+
+cat("nrow after subtype chunk:", nrow(to1po2), "\n")
+cat("sum ADRD after subtype chunk:", sum(to1po2$ADRD, na.rm=TRUE), "\n")
+
+
+# Verify: this should now match exactly, with zero left over
+cat("ADRD:            ", sum(to1po2$ADRD, na.rm=TRUE), "\n")
+cat("Alzheimers:      ", sum(to1po2$Alzheimers, na.rm=TRUE), "\n")
+cat("Vascular:        ", sum(to1po2$Vascular, na.rm=TRUE), "\n")
+cat("Other:           ", sum(to1po2$Other, na.rm=TRUE), "\n")
+cat("Sum of subtypes: ", sum(to1po2$Alzheimers, na.rm=TRUE) + sum(to1po2$Vascular, na.rm=TRUE) + sum(to1po2$Other, na.rm=TRUE), "\n")
+cat("Residual (should be 0):", sum(to1po2$ADRD, na.rm=TRUE) - (sum(to1po2$Alzheimers, na.rm=TRUE) + sum(to1po2$Vascular, na.rm=TRUE) + sum(to1po2$Other, na.rm=TRUE)), "\n")
+```
+
+
+## 1.2 Creating income quartiles
+```{r}
+# Income level as quartiles
+# Step 1: Create quartile columns
+to1po2$ArbInk_quartile <- cut(
+  to1po2$ArbInk,
+  breaks = quantile(to1po2$ArbInk, probs = seq(0, 1, 0.25), na.rm = TRUE),
+  include.lowest = TRUE,
+  labels = 1:4
+)
+
+to1po2$DispInk_quartile <- cut(
+  to1po2$DispInk,
+  breaks = quantile(to1po2$DispInk, probs = seq(0, 1, 0.25), na.rm = TRUE),
+  include.lowest = TRUE,
+  labels = 1:4
+)
+# Step 2: Create income_bins with NA if neither value exists
+to1po2$income_bins <- ifelse(
+  !is.na(to1po2$DispInk_quartile),  # If DispInk_quartile is available, use it
+  as.numeric(as.character(to1po2$DispInk_quartile)),  # Convert factor to numeric
+  ifelse(
+    !is.na(to1po2$ArbInk_quartile),  # Otherwise, if ArbInk_quartile is available, use it
+    as.numeric(as.character(to1po2$ArbInk_quartile)),
+    NA  # If neither is available, assign NA
+  )
+)
+```
+
+## 1.3 Education level 
+```{r}
+# Education level
+to1po2$NewUtbNiva <- ifelse(
+  !is.na(to1po2$Sun2000niva_old) & to1po2$Sun2000niva_old != "*" & !is.na(as.numeric(to1po2$Sun2000niva_old)), # Check if SUN2000_old is numeric and not '*'
+  as.numeric(to1po2$Sun2000niva_old),                                                                  # Use SUN2000_old if valid
+  ifelse(
+    !is.na(to1po2$UtbNiva) & to1po2$UtbNiva != "*" & !is.na(as.numeric(to1po2$UtbNiva)),           # Check if UtbNiva is numeric and not '*'
+    as.numeric(to1po2$UtbNiva),                                                                    # Use UtbNiva as fallback
+    NA                                                                                             # Otherwise, assign NA
+  )
+)
+```
+
+## 1.4 Age at first date and age at last date
+```{r}
+# Calculate age at FirstDate in years
+to1po2$AgeAtFirstDate <- as.numeric(difftime(to1po2$firstDate, to1po2$FODDATn, units = "days") / 365.25)
+
+### We want to check if lastDate is FDATUM for the people with nonempty ATC col (chr string) who are empty in Dementia (no chr string) and S_ADRD
+
+# Start with the default: age at lastDate
+to1po2$AgeAtLastDate <- as.numeric(difftime(to1po2$lastDate, to1po2$FODDATn, units = "days")) / 365.25
+
+# Identify the "meds-only" group (people missed by other sources)
+meds_only <- to1po2$ATC != "" & !is.na(to1po2$ATC) &
+             (to1po2$Dementia == "" | is.na(to1po2$Dementia)) &
+             to1po2$S_ADRD == 0
+
+# For this group, recalculate age using FDATUM
+to1po2$AgeAtLastDate[meds_only] <- as.numeric(difftime(to1po2$FDATUM[meds_only], to1po2$FODDATn[meds_only], units = "days")) / 365.25
+
+### We want whichever is first SveDem INDATUM or regular INDATUM
+
+# Step 3: For everyone else – if either INDATUM or S_INDATUM exists, use the earliest one
+earliest_dx <- pmin(to1po2$INDATUM, to1po2$S_INDATUM, na.rm = TRUE)
+
+has_dx_date <- !is.na(earliest_dx)
+
+to1po2$AgeAtLastDate[has_dx_date] <- as.numeric(
+  difftime(earliest_dx[has_dx_date], to1po2$FODDATn[has_dx_date], units = "days")
+) / 365.25
+```
+
+## 1.5 Birth cohort
+```{r}
+#Decades (but first and last is 20 years)
+# Extract decade from birth year
+to1po2$birthcohort <- paste0(substr(format(to1po2$FODDATn, "%Y"), 1, 3), "0s")
+
+# Manually adjust the first and last groups
+to1po2$birthcohort[to1po2$birthcohort %in% c("1890s", "1900s","1910s")] <- "1890s-1910s"
+to1po2$birthcohort[to1po2$birthcohort %in% c("1960s","1970s", "1980s", "1990s")] <- "1960s-1990s"
+
+# Check the results
+table(to1po2$birthcohort)
+```
+
+## 1.6 Function for calculating beta
+```{r}
+calc_standardized_beta <- function(model, data, covariate) {
+    beta <- coef(model)[covariate]
+    sd_covariate <- sd(data[[covariate]], na.rm = TRUE)
+    std_beta <- beta * sd_covariate
+    return(std_beta)
+}
+```
+
+# 2.0 Lag analysis (Reviewer 3, round 2, comment 7)
+
+Replaces the round-1 sensitivity analysis that excluded ADRD cases within 5 or
+10 years of baseline (Response Figs. 2-3). Instead of excluding later events,
+follow-up starts 5 or 10 years after baseline: everyone still alive, free of
+ADRD and under follow-up at that point enters the risk set at age
+AgeAtFirstDate + lag (delayed entry, age as timescale), and anyone who left
+before then contributes nothing. This follows the same principle as the
+censoring of non-SveDem cases. Exposure is still baseline biological age.
+
+Models as in Fig. 5a: sex-adjusted and multivariable (sex, income quartiles,
+education), outcomes ADRD, AD, VaD and other dementias. Lag 0 is included as a
+check: it must reproduce combined_results_ADRD_main.csv exactly
+(e.g. KDM, ADRD, multivariable: HR 1.0674, N 201,597, 21,089 events).
+
+## 2.1 Lag datasets and counts
+```{r}
+lags <- c(0, 5, 10)
+
+make_lag_data <- function(data, lag) {
+  data$AgeAtEntryLag <- data$AgeAtFirstDate + lag
+  data[!is.na(data$AgeAtLastDate) & data$AgeAtLastDate > data$AgeAtEntryLag, ]
+}
+
+lag_counts <- do.call(rbind, lapply(lags, function(lag) {
+  d <- make_lag_data(to1po2, lag)
+  data.frame(
+    lag_years         = lag,
+    N_entering        = nrow(d),
+    N_left_before_lag = nrow(to1po2) - nrow(d),
+    ADRD_events       = sum(d$ADRD == 1, na.rm = TRUE),
+    ADRD_before_lag   = sum(to1po2$ADRD == 1, na.rm = TRUE) - sum(d$ADRD == 1, na.rm = TRUE),
+    AD_events         = sum(d$Alzheimers == 1, na.rm = TRUE),
+    VaD_events        = sum(d$Vascular == 1, na.rm = TRUE),
+    Other_events      = sum(d$Other == 1, na.rm = TRUE)
+  )
+}))
+print(lag_counts)
+```
+
+## 2.2 Models
+```{r}
+BA_measures <- c("kdm_advance_sd", "phenoage_advance_sd")
+outcomes    <- c("Alzheimers", "ADRD", "Other", "Vascular")  # same order as combined_results
+covs        <- c("+ gender", "+ gender + income_bins + NewUtbNiva")
+
+fit_lag <- function(data, outcome) {
+  HR_BA <- data.frame(
+    BA = rep(BA_measures, each = 2),
+    outcome = rep(outcome, times = length(BA_measures) * 2),
+    model = rep(c("Sex-adjusted model", "Multivariable model"), times = length(BA_measures)),
+    beta = NA, se = NA, HR = NA, CI_lower = NA, CI_upper = NA, p = NA, p_PH_BA = NA, global_p_PH_BA = NA,
+    concordance = NA, N = NA, events = NA, std_beta = NA
+  )
+  for (j in seq_along(BA_measures)) {
+    for (k in 1:2) {
+      fit <- coxph(as.formula(paste0("Surv(AgeAtEntryLag, AgeAtLastDate, ", outcome, ") ~ ",
+                                     BA_measures[j], " ", covs[k])), data = data)
+      s <- summary(fit)
+      i <- (j - 1) * 2 + k
+      HR_BA[i, c(4, 5, 9, 12)] <- c(s$coefficients[1, c(1, 3, 5)], s$concordance[1])
+      HR_BA[i, c("HR", "CI_lower", "CI_upper")] <- s$conf.int[1, c(1, 3, 4)]
+      HR_BA[i, 10] <- cox.zph(fit)$table[1, 3]
+      HR_BA[i, 11] <- cox.zph(fit)$table["GLOBAL", "p"]
+      HR_BA[i, "N"] <- s$n
+      HR_BA[i, "events"] <- fit$nevent
+      HR_BA[i, "std_beta"] <- calc_standardized_beta(fit, data, BA_measures[j])
+    }
+  }
+  HR_BA
+}
+
+lag_results <- list()
+for (lag in lags) {
+  d <- make_lag_data(to1po2, lag)
+  res <- do.call(rbind, lapply(outcomes, function(o) fit_lag(d, o)))
+  res$lag_years <- lag
+  lag_results[[as.character(lag)]] <- res
+  cat("\n=== Lag", lag, "years ===\n")
+  print(res[res$model == "Multivariable model", c("BA", "outcome", "HR", "CI_lower", "CI_upper", "N", "events")])
+}
+```
+
+## 2.3 Check: lag 0 must reproduce the main analysis
+```{r}
+main <- read.csv2(out_path("combined_results_ADRD_main.csv"))  # written by CoxPH_B.Rmd
+chk <- merge(main[, c("BA", "outcome", "model", "HR", "N", "events")],
+             lag_results[["0"]][, c("BA", "outcome", "model", "HR", "N", "events")],
+             by = c("BA", "outcome", "model"), suffixes = c("_main", "_lag0"))
+chk$HR_identical <- abs(chk$HR_main - chk$HR_lag0) < 1e-8
+chk$N_identical <- chk$N_main == chk$N_lag0 & chk$events_main == chk$events_lag0
+print(chk)
+cat("All identical:", all(chk$HR_identical & chk$N_identical), "\n")
+```
+
+## 2.4 Saving (same format as combined_results_ADRD_main.csv, for the forest plots)
+```{r}
+for (lag in c(5, 10)) {
+  write.table(lag_results[[as.character(lag)]][, setdiff(names(lag_results[[as.character(lag)]]), "lag_years")],
+              out_path(paste0("combined_results_ADRD_main_lag", lag, "y.csv")), sep = ";",
+              dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+}
+write.table(lag_counts, out_path("lag_counts_N_events.csv"), sep = ";",
+            dec = ",", row.names = FALSE, quote = FALSE, fileEncoding = "Latin1")
+```

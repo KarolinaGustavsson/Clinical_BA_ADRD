@@ -8,8 +8,8 @@ Adapted from the cancer side project's Fine-Gray scripts.
 
 **This script produced the subdistribution hazard ratios in Supplementary
 Table 9.** A later version of it, adding cumulative incidence functions
-(Aalen-Johansen) for the response to reviewers, is in
-[`../../Review/Baseline/Cumulative_incidence`](../../Review/Baseline/Cumulative_incidence).
+(Aalen-Johansen, Supplementary Figs. 26–27), is in
+[`../Cumulative_incidence`](../Cumulative_incidence).
 That version keeps the `main`, `svedem` and `inspect` modes unchanged, but the
 published Supplementary Table 9 numbers come from the script in this folder.
 
@@ -39,7 +39,7 @@ section 10, "Time rounding", and are a stale expectation in the test rather
 than a fault in the analysis: the check compares counts of distinct exit times
 and expansion size, which is not what the rounding actually changes. The
 rounding check was rewritten for the later version of this script in
-`../../Review/Baseline/Cumulative_incidence`, whose suite passes in full, and
+`../Cumulative_incidence`, whose suite passes in full, and
 the rewritten check shows that rounding *excludes* a small number of people —
 those whose exit age is rounded onto their entry age — rather than moving
 anyone between event categories. Supplementary Table 9 was produced without

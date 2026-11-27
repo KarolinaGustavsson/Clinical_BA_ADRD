@@ -4,22 +4,24 @@ output: html_notebook
 author: Karolina Gustavsson
 ---
 
-Forest plots for the Cox models (Fig. 5 and Supplementary Figs. 14–21, 23–24).
+Forest plots for the Cox models (Fig. 5 and Supplementary Figs. 14–25, 29–30).
 
 Input data: the results tables written by `CoxPH_B.Rmd`,
-`CoxPH_SveDem_censored_B.Rmd`, `CoxPH_subgroups_B.Rmd` and
+`CoxPH_lag_B.Rmd`, `CoxPH_SveDem_censored_B.Rmd`, `CoxPH_subgroups_B.Rmd` and
 `Longitudinal/BA_rate_L.Rmd`, read from the output directory set in `config.R`.
 Figures are written to `fig_path()`.
 
 | Figure | Model | Input |
 |---|---|---|
-| Fig. 5a, Supp. Fig. 17 | Multivariable, KDM / PhenoAge | `combined_results_ADRD_main.csv` |
-| Supp. Figs. 14, 16 | Sex-adjusted, KDM / PhenoAge | `combined_results_ADRD_main.csv` |
-| Supp. Figs. 15, 21 | Multivariable, fasting overnight | `combined_results_ADRD_main_F.csv` |
-| Supp. Figs. 23, 24 | Multivariable, longitudinal subset | `combined_results_ADRD_Baseline_forL.csv` |
-| Fig. 5b, Supp. Fig. 18 | Stratified by baseline age (45 years) | `combined_df_agegroup_45_main.csv` |
-| Fig. 5c, Supp. Fig. 19 | Stratified by sex | `combined_sex_main.csv` |
-| Fig. 5d, Supp. Fig. 20 | SveDem cases, other cases right-censored | `combined_results_SveDem_rightcensored.csv` |
+| Fig. 5a, Supp. Fig. 21 | Multivariable, KDM / PhenoAge | `combined_results_ADRD_main.csv` |
+| Supp. Figs. 14, 20 | Sex-adjusted, KDM / PhenoAge | `combined_results_ADRD_main.csv` |
+| Supp. Figs. 15, 25 | Multivariable, fasting overnight | `combined_results_ADRD_main_F.csv` |
+| Supp. Figs. 16, 17 | Multivariable, 10-year lag | `combined_results_ADRD_main_lag10y.csv` |
+| Supp. Figs. 18, 19 | Multivariable, restricted AD definition (AD*) | `combined_results_ADRD_main.csv`, `combined_results_Alzheimers_s_withoutG308.csv` |
+| Supp. Figs. 29, 30 | Multivariable, longitudinal subset, delayed entry | `combined_results_ADRD_Baseline_forL_delayed_entry.csv` |
+| Fig. 5b, Supp. Fig. 22 | Stratified by baseline age (45 years) | `combined_df_agegroup_45_main.csv` |
+| Fig. 5c, Supp. Fig. 23 | Stratified by sex | `combined_sex_main.csv` |
+| Fig. 5d, Supp. Fig. 24 | SveDem cases, other cases right-censored | `combined_results_SveDem_rightcensored.csv` |
 
 # 1.0 Setup
 
@@ -252,7 +254,7 @@ save_plot <- function(plot, filename, width, height) {
 
 # 2.0 ADRD and subtypes
 
-## 2.1 Main analysis (Fig. 5a, Supp. Figs. 14, 16, 17)
+## 2.1 Main analysis (Fig. 5a, Supp. Figs. 14, 20, 21)
 
 ```{r}
 main_results <- read.csv2(out_path("combined_results_ADRD_main.csv"))
@@ -267,17 +269,16 @@ for (ba in names(ba_shapes)) {
 }
 ```
 
-## 2.2 Sensitivity analyses (Supp. Figs. 15, 21, 23, 24; Response Figs. 2, 3)
+## 2.2 Sensitivity analyses (Supp. Figs. 15–17, 25, 29, 30)
 
 Multivariable models only. Each input is written by the script named in the
 comment; skip any that have not been run.
 
 ```{r}
 sensitivity_inputs <- c(
-  F                 = "combined_results_ADRD_main_F.csv",               # CoxPH_B.Rmd, fasting overnight
-  Baseline_forL     = "combined_results_ADRD_Baseline_forL.csv",        # BA_rate_L.Rmd, longitudinal subset
-  noADRDwithin5years  = "combined_results_ADRD_main_noADRDwithin5y.csv",  # CoxPH_B.Rmd, cases within 5 years excluded
-  noADRDwithin10years = "combined_results_ADRD_main_noADRDwithin10y.csv"  # CoxPH_B.Rmd, cases within 10 years excluded
+  F                         = "combined_results_ADRD_main_F.csv",                       # CoxPH_B.Rmd, fasting overnight
+  lag10y                    = "combined_results_ADRD_main_lag10y.csv",                  # CoxPH_lag_B.Rmd, 10-year lag
+  forL_delayed_entry        = "combined_results_ADRD_Baseline_forL_delayed_entry.csv"   # BA_rate_L.Rmd 3.10, longitudinal subset
 )
 
 for (tag in names(sensitivity_inputs)) {
@@ -292,9 +293,36 @@ for (tag in names(sensitivity_inputs)) {
 }
 ```
 
+## 2.3 Restricted AD definition (Supp. Figs. 18, 19)
+
+The main-analysis rows with AD* (`CoxPH_B.Rmd`, section 2.2.1) added between AD
+and VaD.
+
+```{r}
+ad_star <- read.csv2(out_path("combined_results_Alzheimers_s_withoutG308.csv")) %>%
+  mutate(outcome = "AD_star")
+ad_star_results <- bind_rows(main_results, ad_star) %>% filter(model == "Multivariable model")
+
+for (ba in names(ba_shapes)) {
+  p <- custom_forestplot(
+    df = ad_star_results %>% filter(BA == ba),
+    estimate = HR, se = se, pvalue = p, name = outcome, shape = BA,
+    shape_values = ba_shapes[ba], shape_labels = ba_labels[ba],
+    show_legend = FALSE,
+    point_size = 4, line_size = 1.5, stroke_size = 0.5, shape_dodge = 0.5,
+    text_size = 15, axis_label_size = 10, y_axis_text_size = 12, x_axis_text_size = 10,
+    estimate_text_size = 4.5, aspect_ratio = 0.375,
+    outcome_order = c("ADRD", "Alzheimers", "AD_star", "Vascular", "Other"),
+    outcome_labels = c(subtype_labels, "AD_star" = "AD*")
+  )
+  print(p)
+  save_plot(p, paste0("forestplot_multi_", ba_short[ba], "_ADsens_withoutG308.pdf"), width = 6.8, height = 2.4)
+}
+```
+
 # 3.0 Stratified analyses
 
-## 3.1 By baseline age (Fig. 5b, Supp. Fig. 18)
+## 3.1 By baseline age (Fig. 5b, Supp. Fig. 22)
 
 ```{r}
 agegroup_results <- read.csv2(out_path("combined_df_agegroup_45_main.csv")) %>%
@@ -328,7 +356,7 @@ for (ba in c("KDMAge", "PhenoAge")) {
 }
 ```
 
-## 3.2 By sex (Fig. 5c, Supp. Fig. 19)
+## 3.2 By sex (Fig. 5c, Supp. Fig. 23)
 
 ```{r}
 sex_results <- read.csv2(out_path("combined_sex_main.csv")) %>%
@@ -363,7 +391,7 @@ for (ba in names(sex_settings)) {
 }
 ```
 
-# 4.0 SveDem subanalysis (Fig. 5d, Supp. Fig. 20)
+# 4.0 SveDem subanalysis (Fig. 5d, Supp. Fig. 24)
 
 ADRD cases recorded in SveDem are events; cases identified only in other
 registers are right-censored at their diagnosis date.
