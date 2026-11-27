@@ -226,7 +226,7 @@ https://doi.org/10.5281/zenodo.23420920
 
 | Version | Manuscript version | DOI |
 |---|---|---|
-| v1.1.0 | second revision | see the Zenodo record |
+| v1.1.0 | second revision | https://doi.org/10.5281/zenodo.24583883 |
 | v1.0.0 | first revision | https://doi.org/10.5281/zenodo.23420921 |
 
 A formal citation of the article will be added on publication.
